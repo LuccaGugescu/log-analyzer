@@ -10,6 +10,11 @@
   <header class="toolbar">
     <h1>Log Analyzer</h1>
 
+    <nav class="tabs" aria-label="View">
+      <button class="tab active" data-tab="servers">Servers</button>
+      <button class="tab" data-tab="dashboard">Dashboard</button>
+    </nav>
+
     <section class="group" aria-label="Docker stack">
       <span class="label">Grafana stack</span>
       <span id="stack-state" class="pill">checking…</span>
@@ -27,7 +32,7 @@
     </section>
   </header>
 
-  <main class="layout">
+  <main id="tab-servers" class="layout">
     <section class="panel servers">
       <div class="panel-head">
         <h2>Servers</h2>
@@ -44,6 +49,21 @@
       </div>
       <ol id="activity" class="activity-log"></ol>
     </section>
+  </main>
+
+  <main id="tab-dashboard" class="dashboard" hidden>
+    <div class="dashboard-bar">
+      <span id="dashboard-state" class="muted">Loading Grafana…</span>
+      <span class="spacer"></span>
+      <button id="dashboard-reload" class="secondary small">Reload</button>
+      <button id="dashboard-external" class="secondary small">Open in browser</button>
+    </div>
+    <div id="dashboard-host" class="dashboard-host">
+      <div id="dashboard-offline" class="dashboard-offline" hidden>
+        <p>Grafana isn't reachable on <code>localhost:3000</code>.</p>
+        <p class="muted">Start the Grafana stack from the top bar, then press Reload.</p>
+      </div>
+    </div>
   </main>
 
   <dialog id="server-dialog">

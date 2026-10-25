@@ -6,6 +6,7 @@ const { ConfigStore } = require('./config');
 const { Poller } = require('./poller');
 const { sshExec } = require('./ssh');
 const { stackUp, stackDown, stackStatus, GRAFANA_URL } = require('./docker');
+const { GrafanaView } = require('./grafana-view');
 const { validateServer, toSlug, isValidRemotePath, shellQuote } = require('./validate');
 
 const userData = app.getPath('userData');
@@ -21,6 +22,7 @@ const poller = new Poller({
 });
 
 let window = null;
+let grafana = null;
 const send = (channel, payload) => window?.webContents.send(channel, payload);
 poller.on('status', (status) => send('poll-status', status));
 poller.on('activity', (message) => send('activity', { at: new Date().toISOString(), message }));
@@ -85,6 +87,9 @@ const handlers = {
   'stack:status': () => stackStatus(stackDir, logsDir),
 
   'open:grafana': () => shell.openExternal(GRAFANA_URL),
+  'grafana:show': (_event, bounds) => grafana?.show(bounds),
+  'grafana:hide': () => grafana?.hide(),
+  'grafana:reload': () => grafana?.reload(),
   'open:logs': () => shell.openPath(logsDir),
 
   'dialog:key': async () => {
@@ -113,7 +118,12 @@ const createWindow = () => {
     },
   });
   window.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
-  window.on('closed', () => (window = null));
+  grafana = new GrafanaView({ window, url: GRAFANA_URL, onState: (state) => send('grafana-state', state) });
+  window.on('closed', () => {
+    grafana.destroy();
+    grafana = null;
+    window = null;
+  });
 };
 
 app.whenReady().then(() => {

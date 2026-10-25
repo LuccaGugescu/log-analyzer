@@ -82,6 +82,25 @@ label.inline input[type="number"] { width: 64px; }
   border-bottom: 1px solid var(--border);
 }
 .group { display: flex; align-items: center; gap: 8px; }
+
+.tabs { display: flex; gap: 2px; padding: 2px; background: var(--code-bg); border-radius: 6px; }
+.tab { background: transparent; color: var(--muted); border-color: transparent; }
+.tab.active { background: var(--panel); color: var(--text); border-color: var(--border); }
+
+.dashboard { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.dashboard[hidden] { display: none; }
+.dashboard-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.dashboard-host { flex: 1; min-height: 0; position: relative; }
+.dashboard-offline { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+.dashboard-offline[hidden] { display: none; }
+.dashboard-offline p { margin: 4px 0; }
 .label { color: var(--muted); }
 
 .pill {
@@ -95,6 +114,7 @@ label.inline input[type="number"] { width: 64px; }
 .pill.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 .pill.err { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
 
+.layout[hidden] { display: none; }
 .layout {
   flex: 1;
   min-height: 0;

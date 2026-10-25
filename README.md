@@ -27,6 +27,7 @@ A Windows desktop app that pulls log files from any number of Linux servers over
   - `ssh tail` — one SSH round trip that sends only the new bytes. Use it for big files.
 - **Only new, complete lines** are ingested: half-written last lines wait for the next poll, rotated/truncated files are detected and restart from the top, and the first pull of a file backfills at most its last 5 MB.
 - **One-click Docker stack** — Start/Stop Grafana, Loki and Alloy from the app; Grafana opens on a provisioned **Log Analyzer** dashboard (volume per server, errors per server, level breakdown, full-text search, live log view). Logs are kept 30 days.
+- **Dashboard built into the app** — the Dashboard tab shows Grafana inside the window (full Grafana: explore, edit, sign in). "Open in browser" is still there if you prefer a tab.
 - Labels in Loki: `server` (the name you gave it) and `file` (the remote path), plus Loki's automatic `detected_level`.
 
 ## Requirements
@@ -46,7 +47,7 @@ Download `Log Analyzer Setup x.y.z.exe` (installer) or `Log Analyzer x.y.z.exe` 
 2. **+ Add server** → name, `user@ip`, port, private key (blank = your default `~/.ssh` key / ssh-agent).
 3. **Test connection**, then **Select files from server…** or type paths one per line.
 4. Save. Polling starts automatically; the dot turns green after the first successful pull.
-5. **Open Grafana** → http://localhost:3000 (anonymous read access; admin login `admin` / `admin`, change it with `GRAFANA_ADMIN_PASSWORD`).
+5. Switch to the **Dashboard** tab (or **Open Grafana** for http://localhost:3000 in your browser) (anonymous read access; admin login `admin` / `admin`, change it with `GRAFANA_ADMIN_PASSWORD`).
 
 The remote user needs read access to the selected files (e.g. add it to the `adm` group for `/var/log/syslog` on Debian/Ubuntu).
 
@@ -88,6 +89,7 @@ src/main/       Electron main process
   fetcher.js    scp / ssh-tail transfer and offset logic
   ssh.js        spawns ssh.exe / scp.exe
   docker.js     docker compose up / down / ps
+  grafana-view.js  Grafana embedded as a native view in the window
   config.js     JSON config store
   validate.js   input validation and quoting
 src/renderer/   UI (plain HTML/CSS/JS, no framework)

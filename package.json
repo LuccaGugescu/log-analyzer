@@ -1,6 +1,6 @@
 {
   "name": "log-analyzer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Windows app that pulls logs from multiple servers over SCP/SSH every 15s and ships them to a local Grafana + Loki stack in Docker.",
   "main": "src/main/main.js",
   "license": "MIT",
@@ -17,12 +17,25 @@
   "build": {
     "appId": "io.github.logAnalyzer",
     "productName": "Log Analyzer",
-    "files": ["src/**/*", "package.json"],
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
     "extraResources": [
-      { "from": "stack", "to": "stack", "filter": ["**/*", "!sample-logs/**"] }
+      {
+        "from": "stack",
+        "to": "stack",
+        "filter": [
+          "**/*",
+          "!sample-logs/**"
+        ]
+      }
     ],
     "win": {
-      "target": ["nsis", "portable"]
+      "target": [
+        "nsis",
+        "portable"
+      ]
     },
     "nsis": {
       "oneClick": false,

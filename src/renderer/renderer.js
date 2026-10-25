@@ -242,10 +242,56 @@ const runStack = (button, action, label) =>
     await refreshStack();
   });
 
-$('#stack-up').onclick = (event) => runStack(event.target, window.api.stackUp, 'Starting Grafana stack');
+$('#stack-up').onclick = (event) =>
+  runStack(event.target, window.api.stackUp, 'Starting Grafana stack').then(() => {
+    // Grafana needs a few seconds after its container starts before it serves pages.
+    if (dashboard.grafanaReachable === false) setTimeout(reloadDashboard, 5000);
+  });
 $('#stack-down').onclick = (event) => runStack(event.target, window.api.stackDown, 'Stopping Grafana stack');
 $('#open-grafana').onclick = () => window.api.openGrafana();
 $('#open-logs').onclick = () => window.api.openLogs();
+
+// ---------- embedded dashboard ----------
+
+// Grafana is a native view drawn over #dashboard-host; the renderer only tells
+// the main process where that box is. `grafanaReachable` stays null until the
+// first load settles, and false hides the view so the offline hint shows.
+const dashboard = { active: false, grafanaReachable: null };
+const dashboardHost = $('#dashboard-host');
+
+const placeGrafana = () => {
+  if (!dashboard.active || dashboard.grafanaReachable === false) return window.api.hideGrafana();
+  const { x, y, width, height } = dashboardHost.getBoundingClientRect();
+  window.api.showGrafana({ x, y, width, height });
+};
+
+const showTab = (name) => {
+  for (const tab of document.querySelectorAll('.tab')) tab.classList.toggle('active', tab.dataset.tab === name);
+  $('#tab-servers').hidden = name !== 'servers';
+  $('#tab-dashboard').hidden = name !== 'dashboard';
+  dashboard.active = name === 'dashboard';
+  placeGrafana();
+};
+
+const reloadDashboard = () => {
+  dashboard.grafanaReachable = null;
+  $('#dashboard-offline').hidden = true;
+  $('#dashboard-state').textContent = 'Loading Grafana…';
+  window.api.reloadGrafana();
+  placeGrafana();
+};
+
+window.api.onGrafanaState(({ ok, error }) => {
+  dashboard.grafanaReachable = ok;
+  $('#dashboard-offline').hidden = ok;
+  $('#dashboard-state').textContent = ok ? 'Grafana · localhost:3000' : `Grafana unreachable (${error})`;
+  placeGrafana();
+});
+
+for (const tab of document.querySelectorAll('.tab')) tab.onclick = () => showTab(tab.dataset.tab);
+new ResizeObserver(placeGrafana).observe(dashboardHost);
+$('#dashboard-reload').onclick = reloadDashboard;
+$('#dashboard-external').onclick = () => window.api.openGrafana();
 
 // ---------- boot ----------
 
