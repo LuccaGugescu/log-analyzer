@@ -13,11 +13,11 @@ loki.source.file "pulled" {
 loki.process "labels" {
   // The app marks the first line of every entry with \x1E; unmarked lines
   // (request/response payloads, stack traces) join the entry above them.
-  // max_wait_time is longer than the 15s poll so a block split across two
+  // max_wait_time is longer than the 60s default poll so a block split across two
   // polls still ends up whole.
   stage.multiline {
     firstline     = `^\x{1E}`
-    max_wait_time = "30s"
+    max_wait_time = "90s"
     max_lines     = 1000
   }
 

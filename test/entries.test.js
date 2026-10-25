@@ -49,6 +49,20 @@ test('a file with no recognisable entry starts keeps one entry per line', () => 
   assert.equal(structured, false);
 });
 
+test('Kubernetes CRI prefixes are removed so stack traces still group', () => {
+  const { text } = mark(
+    '2026-10-25T15:00:00.123456789Z stdout F 2026-10-25T15:00:00Z ERROR payment failed\n' +
+      '2026-10-25T15:00:00.123456790Z stderr F     at Payment.charge (payment.ts:42)\n' +
+      '2026-10-25T15:00:01.000000000+00:00 stdout P {"level":"info","msg":"very long \n' +
+      '2026-10-25T15:00:01.000000001+00:00 stdout F line"}\n',
+  );
+  assert.equal(
+    text,
+    `${M}2026-10-25T15:00:00Z ERROR payment failed\n    at Payment.charge (payment.ts:42)\n` +
+      `${M}{"level":"info","msg":"very long line"}\n`,
+  );
+});
+
 test('empty chunk passes through', () => {
   assert.equal(markEntries(Buffer.alloc(0), true).data.length, 0);
 });

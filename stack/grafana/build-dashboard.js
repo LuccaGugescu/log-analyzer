@@ -90,7 +90,7 @@ const dashboard = {
   timezone: 'browser',
   schemaVersion: 39,
   version: 2,
-  refresh: '15s',
+  refresh: '30s',
   time: { from: 'now-1h', to: 'now' },
   links: [
     {

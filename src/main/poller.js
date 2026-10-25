@@ -79,6 +79,10 @@ class Poller extends EventEmitter {
     this.saveState();
   }
 
+  isActive(serverId) {
+    return this.getConfig().servers.some((s) => s.id === serverId && s.enabled !== false);
+  }
+
   discoveryFor(serverId) {
     return this.discovered[serverId] ?? null;
   }
@@ -135,6 +139,10 @@ class Poller extends EventEmitter {
       errors.push(error.message);
       results = files.map(() => ({ error: null }));
     }
+
+    // Stopped or deleted while this fetch was in flight: drop what came back,
+    // so nothing is written after the server's logs were purged.
+    if (!this.isActive(server.id)) return;
 
     for (const [index, file] of files.entries()) {
       const result = results[index] ?? {};

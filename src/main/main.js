@@ -7,6 +7,7 @@ const { Poller } = require('./poller');
 const { sshExec } = require('./ssh');
 const { stackUp, stackDown, stackStatus, GRAFANA_URL } = require('./docker');
 const { GrafanaView } = require('./grafana-view');
+const { PurgeQueue } = require('./purge');
 const { discoverLogs } = require('./discovery');
 const { validateServer, toSlug } = require('./validate');
 
@@ -24,11 +25,16 @@ const poller = new Poller({
   tempDir: app.getPath('temp'),
 });
 
+const purges = new PurgeQueue({ stateFile: path.join(userData, 'purges.json') });
+const serverLogsDir = (server) => path.join(logsDir, toSlug(server.name));
+
 let window = null;
 let grafana = null;
 const send = (channel, payload) => window?.webContents.send(channel, payload);
 poller.on('status', (status) => send('poll-status', status));
-poller.on('activity', (message) => send('activity', { at: new Date().toISOString(), message }));
+const activity = (message) => send('activity', { at: new Date().toISOString(), message });
+poller.on('activity', activity);
+purges.on('status', (status) => send('purge-status', status));
 
 const cleanList = (values) => [...new Set((values ?? []).map((v) => String(v).trim().replace(/(.)\/+$/, '$1')).filter(Boolean))];
 
@@ -60,6 +66,7 @@ const handlers = {
     logsDir,
     grafanaUrl: GRAFANA_URL,
     discovery: Object.fromEntries(store.get().servers.map((s) => [s.id, poller.discoveryFor(s.id)])),
+    purges: Object.fromEntries(store.get().servers.map((s) => [s.id, purges.status(s.id)])),
   }),
 
   'settings:save': (_event, settings) => {
@@ -80,12 +87,39 @@ const handlers = {
     return { ok: true, server: saved };
   },
 
-  'server:delete': (_event, id) => {
-    store.deleteServer(id);
+  // Stop: no more reads from this server, and everything it already sent is
+  // removed — its local log folder now, its lines in Loki via the purge queue.
+  'server:stop': async (_event, id) => {
+    const server = store.get().servers.find((s) => s.id === id);
+    if (!server) return { ok: false };
+    store.upsertServer({ ...server, enabled: false });
     poller.forget(id);
+    activity(`${server.name}: stopped, removing its logs from Grafana`);
+    await purges.purge(id, toSlug(server.name), serverLogsDir(server));
     return { ok: true };
   },
 
+  // Start again from scratch: offsets were cleared on stop, so each file's
+  // recent tail is read as on a first pull.
+  'server:start': (_event, id) => {
+    const server = store.get().servers.find((s) => s.id === id);
+    const purge = purges.status(id);
+    if (!server) return { ok: false };
+    if (purge && !purge.canRestart) return { ok: false, error: 'Still cleaning up — try again in a few seconds.' };
+    purges.forget(id);
+    store.upsertServer({ ...server, enabled: true });
+    activity(`${server.name}: started`);
+    if (poller.running) poller.tick();
+    return { ok: true };
+  },
+
+  'server:delete': async (_event, id) => {
+    const server = store.get().servers.find((s) => s.id === id);
+    store.deleteServer(id);
+    poller.forget(id);
+    if (server) await purges.purge(id, toSlug(server.name), serverLogsDir(server));
+    return { ok: true };
+  },
   'server:test': async (_event, input) => {
     const server = normalizeServer(input);
     const result = await sshExec(server, 'echo connected; uname -sn', { timeoutMs: 20_000 });
@@ -161,5 +195,6 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   poller.stop();
+  purges.stop();
   app.quit();
 });

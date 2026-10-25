@@ -19,13 +19,42 @@ const ENTRY_START_PATTERNS = [
 
 const isEntryStart = (line) => ENTRY_START_PATTERNS.some((pattern) => pattern.test(line));
 
+// Kubernetes container logs (CRI format) prefix every physical line with
+// "<timestamp> <stdout|stderr> <F|P> ". That prefix would make every line look
+// like a new entry, so it is removed first; "P" marks a line the runtime split
+// (over 16 KB) whose rest follows in the next record.
+const CRI_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}) (?:stdout|stderr) ([FP]) (.*)$/;
+
+const unwrapCri = (lines) => {
+  const out = [];
+  let partial = '';
+  for (const line of lines) {
+    const match = line.match(CRI_RE);
+    if (!match) {
+      out.push(partial + line);
+      partial = '';
+      continue;
+    }
+    if (match[1] === 'P') {
+      partial += match[2];
+      continue;
+    }
+    out.push(partial + match[2]);
+    partial = '';
+  }
+  // A split line whose end is not in this chunk is kept as it is.
+  if (partial) out.push(partial);
+  return out;
+};
+
 // `structured` remembers, per file, whether it has ever shown entry-start
 // lines. A file that never does (unknown format) keeps one entry per line,
 // so it can't collapse into giant blocks.
 const markEntries = (buffer, structured) => {
   if (buffer.length === 0) return { data: buffer, structured };
-  const lines = buffer.toString('utf8').split('\n');
-  lines.pop(); // buffers hold complete lines only; drop the empty tail after the last "\n"
+  const raw = buffer.toString('utf8').split('\n');
+  raw.pop(); // buffers hold complete lines only; drop the empty tail after the last "\n"
+  const lines = unwrapCri(raw);
 
   const grouped = structured || lines.some(isEntryStart);
   // Unmarked lines at the top of a chunk continue the entry from the previous poll.

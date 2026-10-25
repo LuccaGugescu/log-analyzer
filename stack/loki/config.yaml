@@ -1,4 +1,4 @@
-auth_enabled: false
+﻿auth_enabled: false
 
 server:
   http_listen_port: 3100
@@ -32,6 +32,9 @@ limits_config:
   discover_log_levels: true
   # Needed by Grafana's Logs Drilldown (volume bars per label, patterns tab).
   volume_enabled: true
+  # Lets the app's "Stop" button delete a server's logs (POST /loki/api/v1/delete).
+  # Queries hide deleted lines right away; the compactor removes them from disk.
+  deletion_mode: filter-and-delete
   ingestion_rate_mb: 16
   ingestion_burst_size_mb: 32
 
@@ -42,6 +45,9 @@ compactor:
   working_directory: /loki/compactor
   retention_enabled: true
   delete_request_store: filesystem
+  # Default is 24h; a stop in this app is meant to take effect now.
+  delete_request_cancel_period: 10s
+  compaction_interval: 5m
 
 analytics:
   reporting_enabled: false

@@ -1,7 +1,7 @@
 {
   "name": "log-analyzer",
   "version": "0.5.0",
-  "description": "Windows app that pulls logs from multiple servers over SCP/SSH every 15s and ships them to a local Grafana + Loki stack in Docker.",
+  "description": "Windows app that pulls logs from multiple servers over SCP/SSH every 60s and ships them to a local Grafana + Loki stack in Docker.",
   "main": "src/main/main.js",
   "license": "MIT",
   "author": "lucca gugescu",

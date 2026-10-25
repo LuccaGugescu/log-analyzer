@@ -1,11 +1,11 @@
 # Log Analyzer
 
-A Windows desktop app that pulls log files from any number of Linux servers over **SCP/SSH every 15 seconds** and ships them into a local **Grafana + Loki** stack running in **Docker**.
+A Windows desktop app that pulls log files from any number of Linux servers over **SCP/SSH every 60 seconds** and ships them into a local **Grafana + Loki** stack running in **Docker**.
 
 ```
  ┌────────────── Windows ───────────────┐
  │  Log Analyzer (Electron)             │        ┌─ server A (user@ip) ─┐
- │   every 15s ── scp / ssh tail ───────┼──────► │ /var/log/syslog      │
+ │   every 60s ── scp / ssh tail ───────┼──────► │ /var/log/syslog      │
  │        │                             │        └──────────────────────┘
  │        ▼                             │        ┌─ server B (user@ip) ─┐
  │  %USERPROFILE%\LogAnalyzer\logs\     │ ─────► │ /var/log/nginx/*.log │
@@ -25,7 +25,7 @@ A Windows desktop app that pulls log files from any number of Linux servers over
   - compressed archives (`.gz`, `.xz`, `.zip`…), binary files (`wtmp`, `lastlog`, `.journal`…), empty files and files untouched for 30+ days are skipped;
   - at most 50 files per server (most recently written first).
   "Scan log directory" in the Add server dialog shows exactly what will be imported and why each other file is skipped. The directory is re-scanned every 5 minutes, so new logs are picked up.
-- **Polling every 15 s** (configurable, min 5 s). A slow server skips a beat instead of piling up overlapping transfers.
+- **Polling every 60 s** (configurable in the top bar, min 5 s). A slow server skips a beat instead of piling up overlapping transfers.
 - **Two transfer modes**
   - `ssh tail` (default, lightest) — **one** SSH session per poll for all of the server's files, sending only the new bytes (max 4 MB per file per poll).
   - `scp` — copies each file with `scp`, then appends only the new bytes. Heavier: the whole file crosses the network every poll.
@@ -85,6 +85,16 @@ Every line gets a `level` label (trace, debug, info, warn, error, fatal, or unkn
 
 The dashboard JSON is generated: edit `stack/grafana/build-dashboard.js` and run `node stack/grafana/build-dashboard.js`.
 
+## Stopping a server
+
+**Stop** on a server card stops reading that server and removes everything it sent to Grafana:
+
+1. no more SSH reads; a read already in flight is discarded;
+2. its pulled files in `%USERPROFILE%\LogAnalyzer\logs\<server>\` are deleted;
+3. its lines are deleted from Loki (`/loki/api/v1/delete`), with a second request 100 s later for lines Alloy was still shipping. Loki applies deletes with a delay, so the card shows "removing its logs from Grafana (N lines left)" until Loki returns none, usually within a few minutes. If the Grafana stack is not running, the cleanup waits and continues when it is.
+
+**Start** reads the server again from its current files (the last 5 MB of each, as on a first pull). **Delete** removes the server and its logs the same way.
+
 ## Multi-line entries (payloads, stack traces)
 
 A log entry that spans several lines stays **one entry** in Grafana: an API call followed by its request payload, the response line with its response payload, or an error with its stack trace:
@@ -135,7 +145,7 @@ npm run dist     # build dist\Log Analyzer Setup x.y.z.exe and the portable exe
 ```
 src/main/       Electron main process
   main.js       window + IPC
-  poller.js     15 s loop, per-server state, appends to the logs folder
+  poller.js     poll loop (60 s default), per-server state, appends to the logs folder
   discovery.js  scans the log directory, picks live files, skips rotations
   fetcher.js    batched ssh-tail / scp transfer and offset logic
   ssh.js        spawns ssh.exe / scp.exe

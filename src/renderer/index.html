@@ -74,6 +74,7 @@
     <form id="server-form" method="dialog">
       <h2 id="server-dialog-title">Add server</h2>
       <input type="hidden" name="id" />
+      <input type="hidden" name="enabled" value="true" />
 
       <div class="grid">
         <label>User <input name="user" required placeholder="root" autocomplete="off" /></label>
@@ -102,7 +103,6 @@
             <option value="scp">scp – copy each file, keep only new lines (heavier)</option>
           </select>
         </label>
-        <label class="inline"><input name="enabled" type="checkbox" checked /> Enabled</label>
       </details>
 
       <div class="row actions">

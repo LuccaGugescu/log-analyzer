@@ -37,14 +37,29 @@ const renderServers = () => {
 
   for (const server of servers) {
     const status = state.statuses[server.id];
-    const dotClass = server.enabled === false ? 'off' : !status ? 'idle' : status.ok ? 'ok' : 'err';
+    const stopped = server.enabled === false;
+    const purge = state.config.purges?.[server.id];
+    const dotClass = stopped ? 'off' : !status ? 'idle' : status.ok ? 'ok' : 'err';
     const discovery = state.config.discovery?.[server.id];
-    const statusText = server.enabled === false
-      ? 'disabled'
+    const statusText = stopped
+      ? `stopped · ${purgeText(purge)}`
       : !status ? 'waiting for first poll'
       : `${status.ok ? 'ok' : 'error'} · ${timeAgo(status.at)} · watching ${status.watching} files, skipped ${status.skipped}`;
 
-    const edit = el('button', { className: 'secondary small', textContent: 'Edit', onclick: () => openServerDialog(server) });
+    const toggle = stopped
+      ? el('button', {
+          className: 'small',
+          textContent: 'Start',
+          disabled: purge ? !purge.canRestart : false,
+          title: purge && !purge.canRestart ? 'Available once the cleanup requests are sent (under a minute)' : 'Read this server\'s logs again',
+          onclick: (event) => withBusy(event.target, () => startServer(server)),
+        })
+      : el('button', {
+          className: 'danger small',
+          textContent: 'Stop',
+          title: 'Stop reading this server and remove its logs from Grafana',
+          onclick: (event) => withBusy(event.target, () => stopServer(server)),
+        });    const edit = el('button', { className: 'secondary small', textContent: 'Edit', onclick: () => openServerDialog(server) });
     const remove = el('button', { className: 'danger small', textContent: 'Delete', onclick: () => deleteServer(server) });
     const watched = discovery
       ? el('details', { className: 'watched' }, [
@@ -53,7 +68,7 @@ const renderServers = () => {
         ])
       : '';
 
-    const card = el('li', { className: 'server' }, [
+    const card = el('li', { className: `server${stopped ? ' paused' : ''}` }, [
       el('span', { className: `dot ${dotClass}`, title: statusText }),
       el('div', { className: 'server-main' }, [
         el('strong', { textContent: server.name }),
@@ -63,18 +78,51 @@ const renderServers = () => {
         watched,
         status && !status.ok ? el('pre', { className: 'feedback error', textContent: status.errors.join('\n') }) : '',
       ]),
-      el('div', { className: 'server-actions' }, [edit, remove]),
+      el('div', { className: 'server-actions' }, [toggle, edit, remove]),
     ]);
     list.append(card);
   }
 };
 
+const purgeText = (purge) => {
+  if (!purge) return 'not reading any files';
+  if (purge.error) return `removing its logs from Grafana: ${purge.error}`;
+  if (purge.phase === 'done') return 'its logs were removed from Grafana';
+  if (purge.remaining === 0) return 'logs removed from Grafana, finishing cleanup (under 2 min)';
+  const left = purge.remaining == null ? '' : ` (${purge.remaining} lines left)`;
+  return `removing its logs from Grafana${left} — Loki can take a few minutes`;
+};
+
+const stopServer = async (server) => {
+  const sure = confirm(
+    `Stop reading "${server.name}" and remove all of its logs from Grafana?\n\n` +
+      'The logs already pulled from this server are deleted and cannot be recovered. Start reads it again from its current files.',
+  );
+  if (!sure) return;
+  await window.api.stopServer(server.id);
+  delete state.statuses[server.id];
+  await reloadConfig();
+};
+
+const startServer = async (server) => {
+  const result = await window.api.startServer(server.id);
+  if (!result.ok && result.error) note(`${server.name}: ${result.error}`);
+  await reloadConfig();
+};
+
 const deleteServer = async (server) => {
-  if (!confirm(`Delete server "${server.name}"? Logs already pulled stay on disk.`)) return;
+  const sure = confirm(`Delete server "${server.name}"?\n\nIts logs are removed from Grafana too. This cannot be undone.`);
+  if (!sure) return;
   await window.api.deleteServer(server.id);
   await reloadConfig();
-  note(`Removed ${server.name}`);
+  note(`Removed ${server.name} and its logs`);
 };
+
+window.api.onPurgeStatus((status) => {
+  if (!status || !state.config) return;
+  state.config.purges = { ...state.config.purges, [status.serverId]: status };
+  renderServers();
+});
 
 // ---------- server dialog ----------
 
@@ -96,7 +144,7 @@ const readServerForm = () => {
     port: Number(data.get('port')),
     identityFile: data.get('identityFile'),
     mode: data.get('mode'),
-    enabled: serverForm.elements.enabled.checked,
+    enabled: data.get('enabled') !== 'false',
     logDirs: String(data.get('logDirs')).split(/\r?\n/).map((p) => p.trim()).filter(Boolean),
   };
 };
@@ -115,7 +163,7 @@ const openServerDialog = (server) => {
   fields.identityFile.value = server?.identityFile ?? '';
   fields.mode.value = server?.mode ?? 'tail';
   fields.logDirs.value = (server?.logDirs ?? ['/var/log']).join('\n');
-  fields.enabled.checked = server?.enabled !== false;
+  fields.enabled.value = String(server?.enabled !== false);
   $('#server-dialog').showModal();
 };
 

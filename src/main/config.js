@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-const DEFAULT_CONFIG = { pollSeconds: 15, autoStart: true, servers: [] };
+const DEFAULT_CONFIG = { pollSeconds: 60, autoStart: true, servers: [] };
 const MIN_POLL_SECONDS = 5;
 
 const readJson = (file, fallback) => {
