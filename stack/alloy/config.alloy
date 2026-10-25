@@ -17,10 +17,29 @@ loki.process "labels" {
     expression = "^/logs/(?P<server>[^/]+)/(?P<file>[^/]+)\\.log$"
   }
 
+  // First level word in the line, normalized to trace/debug/info/warn/error/fatal,
+  // so it can be filtered and clicked like any other label. Lines without one
+  // keep "unknown" (stages below only run when a level was found).
+  stage.static_labels {
+    values = { level = "unknown" }
+  }
+
+  stage.regex {
+    expression = `(?i)\b(?P<level>trace|debug|info|notice|warn(?:ing)?|err(?:or)?|crit(?:ical)?|fatal|alert|emerg(?:ency)?|panic)\b`
+  }
+
+  stage.template {
+    source   = "level"
+    template = `{{ $v := ToLower .Value }}{{ if or (eq $v "warning") (eq $v "warn") }}warn{{ else if or (eq $v "err") (eq $v "error") }}error{{ else if or (eq $v "crit") (eq $v "critical") (eq $v "fatal") (eq $v "alert") (eq $v "emerg") (eq $v "emergency") (eq $v "panic") }}fatal{{ else if eq $v "notice" }}info{{ else }}{{ $v }}{{ end }}`
+  }
+
   stage.labels {
     values = {
       server = "",
       file   = "",
+      level  = "",
+      // Logs Drilldown groups by service_name; one "service" per server.
+      service_name = "server",
     }
   }
 

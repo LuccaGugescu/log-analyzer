@@ -53,7 +53,11 @@
 
   <main id="tab-dashboard" class="dashboard" hidden>
     <div class="dashboard-bar">
-      <span id="dashboard-state" class="muted">Loading Grafana…</span>
+      <nav class="tabs" aria-label="Grafana page">
+        <button class="tab small active" data-page="dashboard" title="Overview with filter bar: server, file, level, contains / excludes regex">Dashboard</button>
+        <button class="tab small" data-page="drilldown" title="Grafana Logs Drilldown: click any field value to include or exclude it, browse log patterns">Drilldown</button>
+      </nav>
+      <span id="dashboard-state" class="muted small">Loading Grafana…</span>
       <span class="spacer"></span>
       <button id="dashboard-reload" class="secondary small">Reload</button>
       <button id="dashboard-external" class="secondary small">Open in browser</button>

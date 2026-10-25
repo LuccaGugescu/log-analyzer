@@ -2,6 +2,13 @@
 
 const { WebContentsView, shell } = require('electron');
 
+// The provisioned dashboard, and Grafana's Logs Drilldown app for
+// point-and-click filtering (include/exclude by field, regex, patterns).
+const PAGES = {
+  dashboard: '/d/log-analyzer',
+  drilldown: '/a/grafana-lokiexplore-app/explore',
+};
+
 // Shows Grafana inside the app window as a native view laid over the
 // renderer's dashboard area. A top-level view (not an iframe) keeps Grafana's
 // login cookies and frame protections working without loosening its config.
@@ -12,6 +19,7 @@ class GrafanaView {
     this.onState = onState;
     this.view = null;
     this.visible = false;
+    this.page = 'dashboard';
   }
 
   ensureView() {
@@ -64,10 +72,16 @@ class GrafanaView {
 
   // A refused connection rejects loadURL; did-fail-load already reports it.
   load() {
-    this.view.webContents.loadURL(`${this.url}/d/log-analyzer`).catch(() => {});
+    this.view.webContents.loadURL(`${this.url}${PAGES[this.page]}`).catch(() => {});
   }
 
   reload() {
+    if (this.view) this.load();
+  }
+
+  open(page) {
+    if (!PAGES[page]) return;
+    this.page = page;
     if (this.view) this.load();
   }
 

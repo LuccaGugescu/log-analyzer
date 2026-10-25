@@ -68,6 +68,23 @@ Host keys are trusted on first connection (`StrictHostKeyChecking=accept-new`) a
 
 All Docker ports bind to `127.0.0.1` only: Grafana `3000`, Loki `3100`, Alloy UI `12345`.
 
+## Filtering logs
+
+The **Dashboard** (Grafana dashboard) has a filter bar; every filter combines with the others and applies to all panels:
+
+| Filter | How |
+|---|---|
+| Server / File / Level | pick one or more |
+| Contains (regex) | type a word or regex, press Enter; add several to OR them (`error`, `timeout`, `user=(alice\|bob)`). Case-insensitive. |
+| Excludes (regex) | same, hides matching lines (`health check`, `GET /static`) |
+| Label filters | `+` to add `label = / != / =~ / !~ value`; or open a log line and click the **+ / −** magnifier next to a label to filter for / against it |
+
+**Drilldown** (switch above the embedded Grafana, or the *Logs Drilldown* link on the dashboard) is Grafana's point-and-click log explorer: click any label or field value to include or exclude it, add line filters with regex, and see recurring log **patterns**.
+
+Every line gets a `level` label (trace, debug, info, warn, error, fatal, or unknown) taken from the first level word in the line.
+
+The dashboard JSON is generated: edit `stack/grafana/build-dashboard.js` and run `node stack/grafana/build-dashboard.js`.
+
 ## Try it with the mock server
 
 No server handy? `mock/` runs a fake Linux box in Docker: key-only SSH on `127.0.0.1:2222` and a generator writing app, nginx and worker logs into `/var/log/mock` every 2 s. It rotates `server.log` every ~3 minutes and leaves rotated files, archives, an empty file, a stale file and `wtmp` lying around, so you can watch discovery skip them.

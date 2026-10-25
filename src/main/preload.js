@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('api', {
   showGrafana: invoke('grafana:show'),
   hideGrafana: invoke('grafana:hide'),
   reloadGrafana: invoke('grafana:reload'),
+  openGrafanaPage: invoke('grafana:open'),
   onGrafanaState: subscribe('grafana-state'),
   openLogs: invoke('open:logs'),
   pickKey: invoke('dialog:key'),

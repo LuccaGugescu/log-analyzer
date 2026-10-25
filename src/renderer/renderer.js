@@ -284,7 +284,7 @@ const placeGrafana = () => {
 };
 
 const showTab = (name) => {
-  for (const tab of document.querySelectorAll('.tab')) tab.classList.toggle('active', tab.dataset.tab === name);
+  for (const tab of document.querySelectorAll('.tab[data-tab]')) tab.classList.toggle('active', tab.dataset.tab === name);
   $('#tab-servers').hidden = name !== 'servers';
   $('#tab-dashboard').hidden = name !== 'dashboard';
   dashboard.active = name === 'dashboard';
@@ -306,7 +306,13 @@ window.api.onGrafanaState(({ ok, error }) => {
   placeGrafana();
 });
 
-for (const tab of document.querySelectorAll('.tab')) tab.onclick = () => showTab(tab.dataset.tab);
+for (const tab of document.querySelectorAll('.tab[data-tab]')) tab.onclick = () => showTab(tab.dataset.tab);
+for (const tab of document.querySelectorAll('.tab[data-page]')) {
+  tab.onclick = () => {
+    for (const other of document.querySelectorAll('.tab[data-page]')) other.classList.toggle('active', other === tab);
+    window.api.openGrafanaPage(tab.dataset.page);
+  };
+}
 new ResizeObserver(placeGrafana).observe(dashboardHost);
 $('#dashboard-reload').onclick = reloadDashboard;
 $('#dashboard-external').onclick = () => window.api.openGrafana();

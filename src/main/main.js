@@ -116,6 +116,7 @@ const handlers = {
   'grafana:show': (_event, bounds) => grafana?.show(bounds),
   'grafana:hide': () => grafana?.hide(),
   'grafana:reload': () => grafana?.reload(),
+  'grafana:open': (_event, page) => grafana?.open(page),
   'open:logs': () => shell.openPath(logsDir),
 
   'dialog:key': async () => {
