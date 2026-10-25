@@ -15,20 +15,20 @@
       <button class="tab" data-tab="dashboard">Dashboard</button>
     </nav>
 
-    <section class="group" aria-label="Docker stack">
-      <span class="label">Grafana stack</span>
-      <span id="stack-state" class="pill">checking…</span>
-      <button id="stack-up">Start</button>
-      <button id="stack-down" class="secondary">Stop</button>
-      <button id="open-grafana" class="secondary">Open Grafana</button>
+    <span class="spacer"></span>
+
+    <section class="control" aria-label="Grafana stack">
+      <span class="control-label">Grafana</span>
+      <span id="stack-state" class="status"><span class="dot idle"></span><span class="status-text">checking…</span></span>
+      <button id="stack-toggle" class="small" disabled>Start</button>
     </section>
 
-    <section class="group" aria-label="Polling">
-      <span class="label">Polling</span>
-      <span id="poll-state" class="pill">stopped</span>
-      <label class="inline">every <input id="poll-seconds" type="number" min="5" step="1" /> s</label>
-      <button id="poll-toggle">Start</button>
-      <button id="poll-now" class="secondary">Poll now</button>
+    <section class="control" aria-label="Polling">
+      <span class="control-label">Polling</span>
+      <span id="poll-state" class="status"><span class="dot idle"></span><span class="status-text">stopped</span></span>
+      <label class="interval" title="Seconds between polls">every <input id="poll-seconds" type="number" min="5" step="1" />s</label>
+      <button id="poll-toggle" class="small">Resume</button>
+      <button id="poll-now" class="secondary small" title="Poll all servers now">Poll now</button>
     </section>
   </header>
 
@@ -39,7 +39,7 @@
         <button id="add-server">+ Add server</button>
       </div>
       <ul id="server-list" class="server-list"></ul>
-      <p id="empty-servers" class="empty">No servers yet. Add one with its <code>user@ip</code> and the log files to pull.</p>
+      <p id="empty-servers" class="empty">No servers yet. Add one with its user, IP and log directory — the logs inside are found automatically.</p>
     </section>
 
     <section class="panel activity">

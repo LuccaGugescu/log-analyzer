@@ -11,7 +11,9 @@ const { discoverLogs } = require('./discovery');
 const { validateServer, toSlug } = require('./validate');
 
 const userData = app.getPath('userData');
-const logsDir = path.join(userData, 'logs');
+// Not under AppData: when the app is started by a packaged (MSIX) Windows app,
+// AppData writes are redirected to a private copy that Docker never sees.
+const logsDir = path.join(app.getPath('home'), 'LogAnalyzer', 'logs');
 const stackDir = app.isPackaged ? path.join(process.resourcesPath, 'stack') : path.join(__dirname, '..', '..', 'stack');
 
 const store = new ConfigStore(path.join(userData, 'config.json'));

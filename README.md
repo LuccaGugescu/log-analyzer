@@ -8,7 +8,7 @@ A Windows desktop app that pulls log files from any number of Linux servers over
  │   every 15s ── scp / ssh tail ───────┼──────► │ /var/log/syslog      │
  │        │                             │        └──────────────────────┘
  │        ▼                             │        ┌─ server B (user@ip) ─┐
- │  %APPDATA%\log-analyzer\logs\        │ ─────► │ /var/log/nginx/*.log │
+ │  %USERPROFILE%\LogAnalyzer\logs\     │ ─────► │ /var/log/nginx/*.log │
  │    <server>\<file>.log               │        └──────────────────────┘
  │        │                             │
  │  ┌─────┴──── Docker ──────────────┐  │
@@ -63,10 +63,20 @@ Host keys are trusted on first connection (`StrictHostKeyChecking=accept-new`) a
 |---|---|
 | Servers + settings | `%APPDATA%\log-analyzer\config.json` |
 | Read offsets per file | `%APPDATA%\log-analyzer\offsets.json` |
-| Pulled logs (mounted into Alloy) | `%APPDATA%\log-analyzer\logs\<server>\<file>.log` |
+| Pulled logs (mounted into Alloy) | `%USERPROFILE%\LogAnalyzer\logs\<server>\<file>.log` |
 | Loki / Grafana data | Docker volumes `log-analyzer_loki-data`, `log-analyzer_grafana-data` |
 
 All Docker ports bind to `127.0.0.1` only: Grafana `3000`, Loki `3100`, Alloy UI `12345`.
+
+## Try it with the mock server
+
+No server handy? `mock/` runs a fake Linux box in Docker: key-only SSH on `127.0.0.1:2222` and a generator writing app, nginx and worker logs into `/var/log/mock` every 2 s. It rotates `server.log` every ~3 minutes and leaves rotated files, archives, an empty file, a stale file and `wtmp` lying around, so you can watch discovery skip them.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File mock\start-mock.ps1
+```
+
+It creates its SSH key in `mock\.ssh\` (git-ignored) and prints what to enter in **+ Add server**: user `mock`, IP `127.0.0.1`, log directory `/var/log/mock`, and under *Advanced* port `2222` and the key path. Stop it with `docker compose -f mock\docker-compose.yml down -v`.
 
 ## Run the stack without the app
 

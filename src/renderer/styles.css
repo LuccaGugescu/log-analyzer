@@ -83,6 +83,23 @@ label.inline input[type="number"] { width: 64px; }
 }
 .group { display: flex; align-items: center; gap: 8px; }
 
+.control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  height: 36px;
+}
+.control-label { font-weight: 600; }
+.status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.status .dot { margin-top: 0; width: 8px; height: 8px; }
+.interval { flex-direction: row; align-items: center; gap: 4px; margin: 0; font-size: 13px; white-space: nowrap; }
+.interval input { width: 48px; padding: 2px 6px; text-align: right; }
+.control button.small { padding: 4px 10px; font-size: 13px; min-width: 64px; }
+.toolbar .spacer { flex: 1; }
+
 .tabs { display: flex; gap: 2px; padding: 2px; background: var(--code-bg); border-radius: 6px; }
 .tab { background: transparent; color: var(--muted); border-color: transparent; }
 .tab.active { background: var(--panel); color: var(--text); border-color: var(--border); }

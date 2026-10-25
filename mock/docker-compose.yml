@@ -1,0 +1,31 @@
+name: log-analyzer-mock
+
+# A fake Linux server to try Log Analyzer without a real one:
+#   ssh  mock@127.0.0.1 -p 2222   (key-only, key created by start-mock.ps1)
+#   logs /var/log/mock  (app, nginx, worker — rotated like logrotate does)
+services:
+  sshd:
+    image: lscr.io/linuxserver/openssh-server:latest
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      USER_NAME: mock
+      # Set by start-mock.ps1, which creates the key.
+      PUBLIC_KEY: ${MOCK_PUBLIC_KEY:-}
+      PASSWORD_ACCESS: "false"
+    volumes:
+      - mock-logs:/var/log/mock:ro
+    ports:
+      - "127.0.0.1:2222:2222"
+    restart: unless-stopped
+
+  log-generator:
+    image: alpine:3.20
+    command: ["sh", "/generate.sh"]
+    volumes:
+      - ./generate.sh:/generate.sh:ro
+      - mock-logs:/var/log/mock
+    restart: unless-stopped
+
+volumes:
+  mock-logs:

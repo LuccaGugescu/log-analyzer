@@ -3,3 +3,4 @@ dist/
 *.log
 !stack/sample-logs/**/*.log
 .env
+mock/.ssh/

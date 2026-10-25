@@ -183,13 +183,28 @@ $('#scan-server').onclick = (event) =>
     renderScan(result);
   });
 
+// ---------- toolbar status ----------
+
+// One status chip + one action per control: the button only ever offers the
+// next sensible step, and is orange only when that step is needed.
+const setStatus = (selector, tone, text, title = '') => {
+  const chip = $(selector);
+  chip.querySelector('.dot').className = `dot ${tone}`;
+  chip.querySelector('.status-text').textContent = text;
+  chip.title = title;
+};
+
+const setAction = (button, label, primary) => {
+  button.textContent = label;
+  button.classList.toggle('secondary', !primary);
+};
+
 // ---------- polling ----------
 
 const renderPolling = () => {
   const running = state.config.running;
-  $('#poll-state').textContent = running ? 'running' : 'stopped';
-  $('#poll-state').className = `pill ${running ? 'ok' : ''}`;
-  $('#poll-toggle').textContent = running ? 'Stop' : 'Start';
+  setStatus('#poll-state', running ? 'ok' : 'off', running ? 'running' : 'paused');
+  setAction($('#poll-toggle'), running ? 'Pause' : 'Resume', !running);
   $('#poll-seconds').value = state.config.pollSeconds;
 };
 
@@ -216,37 +231,43 @@ window.api.onActivity(logActivity);
 
 // ---------- docker stack ----------
 
-const refreshStack = async () => {
-  const result = await window.api.stackStatus();
-  const pill = $('#stack-state');
-  const running = result.services.filter((s) => s.state === 'running').length;
+const SERVICE_COUNT = 3;
+const stack = { running: 0, busy: false };
+
+const renderStack = (result) => {
+  const button = $('#stack-toggle');
+  button.disabled = stack.busy || !result.ok;
   if (!result.ok) {
-    pill.textContent = 'docker unavailable';
-    pill.className = 'pill err';
-    pill.title = result.output ?? '';
-  } else {
-    pill.textContent = running === 0 ? 'stopped' : `${running}/3 running`;
-    pill.className = `pill ${running === 3 ? 'ok' : running > 0 ? 'warn' : ''}`;
-    pill.title = result.services.map((s) => `${s.name}: ${s.status}`).join('\n');
+    setStatus('#stack-state', 'err', 'Docker not running', result.output ?? '');
+    setAction(button, 'Start', true);
+    return;
   }
+  stack.running = result.services.filter((s) => s.state === 'running').length;
+  const details = result.services.map((s) => `${s.name}: ${s.status}`).join('\n');
+  if (stack.running === SERVICE_COUNT) setStatus('#stack-state', 'ok', 'running', details);
+  else if (stack.running > 0) setStatus('#stack-state', 'idle', `${stack.running}/${SERVICE_COUNT} up`, details);
+  else setStatus('#stack-state', 'off', 'stopped', details);
+  // Partly up still offers Start: `up -d` brings the missing services back.
+  const fullyUp = stack.running === SERVICE_COUNT;
+  setAction(button, fullyUp ? 'Stop' : 'Start', !fullyUp);
 };
 
-const runStack = (button, action, label) =>
-  withBusy(button, async () => {
-    note(`${label}…`);
-    const result = await action();
-    note(result.ok ? `${label}: done` : `${label} failed:\n${result.output}`);
-    await refreshStack();
-  });
+const refreshStack = async () => renderStack(await window.api.stackStatus());
 
-$('#stack-up').onclick = (event) =>
-  runStack(event.target, window.api.stackUp, 'Starting Grafana stack').then(() => {
-    // Grafana needs a few seconds after its container starts before it serves pages.
-    if (dashboard.grafanaReachable === false) setTimeout(reloadDashboard, 5000);
-  });
-$('#stack-down').onclick = (event) => runStack(event.target, window.api.stackDown, 'Stopping Grafana stack');
-$('#open-grafana').onclick = () => window.api.openGrafana();
-$('#open-logs').onclick = () => window.api.openLogs();
+$('#stack-toggle').onclick = async (event) => {
+  const starting = stack.running < SERVICE_COUNT;
+  const label = starting ? 'Starting Grafana stack' : 'Stopping Grafana stack';
+  stack.busy = true;
+  event.target.disabled = true;
+  setStatus('#stack-state', 'idle', starting ? 'starting…' : 'stopping…');
+  note(`${label}…`);
+  const result = await (starting ? window.api.stackUp() : window.api.stackDown());
+  note(result.ok ? `${label}: done` : `${label} failed:\n${result.output}`);
+  stack.busy = false;
+  await refreshStack();
+  // Grafana needs a few seconds after its container starts before it serves pages.
+  if (starting && dashboard.grafanaReachable === false) setTimeout(reloadDashboard, 5000);
+};$('#open-logs').onclick = () => window.api.openLogs();
 
 // ---------- embedded dashboard ----------
 
