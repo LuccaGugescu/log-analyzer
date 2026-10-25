@@ -5,7 +5,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { ConfigStore } = require('./config');
 const { Poller } = require('./poller');
 const { sshExec } = require('./ssh');
-const { stackUp, stackDown, stackStatus, GRAFANA_URL } = require('./docker');
+const { NativeStack, GRAFANA_URL } = require('./stack');
+const { Shipper } = require('./shipper');
 const { GrafanaView } = require('./grafana-view');
 const { PurgeQueue } = require('./purge');
 const { discoverLogs } = require('./discovery');
@@ -15,7 +16,14 @@ const userData = app.getPath('userData');
 // Not under AppData: when the app is started by a packaged (MSIX) Windows app,
 // AppData writes are redirected to a private copy that Docker never sees.
 const logsDir = path.join(app.getPath('home'), 'LogAnalyzer', 'logs');
-const stackDir = app.isPackaged ? path.join(process.resourcesPath, 'stack') : path.join(__dirname, '..', '..', 'stack');
+const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..');
+const stackDir = path.join(resources, 'stack');
+const stack = new NativeStack({
+  vendorDir: path.join(resources, 'vendor'),
+  stackDir,
+  dataDir: path.join(app.getPath('home'), 'LogAnalyzer', 'data'),
+});
+const shipper = new Shipper({ logsDir, stateFile: path.join(userData, 'shipped.json') });
 
 const store = new ConfigStore(path.join(userData, 'config.json'));
 const poller = new Poller({
@@ -94,6 +102,7 @@ const handlers = {
     if (!server) return { ok: false };
     store.upsertServer({ ...server, enabled: false });
     poller.forget(id);
+    shipper.forgetServer(serverLogsDir(server));
     activity(`${server.name}: stopped, removing its logs from Grafana`);
     await purges.purge(id, toSlug(server.name), serverLogsDir(server));
     return { ok: true };
@@ -117,6 +126,7 @@ const handlers = {
     const server = store.get().servers.find((s) => s.id === id);
     store.deleteServer(id);
     poller.forget(id);
+    if (server) shipper.forgetServer(serverLogsDir(server));
     if (server) await purges.purge(id, toSlug(server.name), serverLogsDir(server));
     return { ok: true };
   },
@@ -142,9 +152,9 @@ const handlers = {
   'poller:stop': () => (poller.stop(), false),
   'poller:now': () => (poller.tick(), poller.running),
 
-  'stack:up': () => stackUp(stackDir, logsDir),
-  'stack:down': () => stackDown(stackDir, logsDir),
-  'stack:status': () => stackStatus(stackDir, logsDir),
+  'stack:up': () => stack.start(),
+  'stack:down': () => stack.stop(),
+  'stack:status': () => stack.status(),
 
   'open:grafana': () => shell.openExternal(GRAFANA_URL),
   'grafana:show': (_event, bounds) => grafana?.show(bounds),
@@ -191,10 +201,15 @@ app.whenReady().then(() => {
   for (const [channel, handler] of Object.entries(handlers)) ipcMain.handle(channel, handler);
   createWindow();
   if (store.get().autoStart) poller.start();
+  shipper.start();
+  // Grafana and Loki come with the app; start them with it.
+  stack.start().then((result) => activity(result.output));
 });
 
 app.on('window-all-closed', () => {
   poller.stop();
+  shipper.stop();
+  stack.stop();
   purges.stop();
   app.quit();
 });

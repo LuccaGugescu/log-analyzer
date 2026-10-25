@@ -1,6 +1,6 @@
 # Log Analyzer
 
-A Windows desktop app that pulls log files from any number of Linux servers over **SCP/SSH every 60 seconds** and ships them into a local **Grafana + Loki** stack running in **Docker**.
+A Windows desktop app that pulls log files from any number of Linux servers over **SCP/SSH every 60 seconds** and ships them into a local **Grafana + Loki** stack that comes **bundled with the app**: one installer, no Docker.
 
 ```
  ┌────────────── Windows ───────────────┐
@@ -11,8 +11,8 @@ A Windows desktop app that pulls log files from any number of Linux servers over
  │  %USERPROFILE%\LogAnalyzer\logs\     │ ─────► │ /var/log/nginx/*.log │
  │    <server>\<file>.log               │        └──────────────────────┘
  │        │                             │
- │  ┌─────┴──── Docker ──────────────┐  │
- │  │ Alloy ─► Loki ─► Grafana :3000 │  │
+ │  ┌─────┴──── bundled ─────────────┐  │
+ │  │ app ─► Loki ─► Grafana :3000   │  │
  │  └────────────────────────────────┘  │
  └──────────────────────────────────────┘
 ```
@@ -30,20 +30,20 @@ A Windows desktop app that pulls log files from any number of Linux servers over
   - `ssh tail` (default, lightest) — **one** SSH session per poll for all of the server's files, sending only the new bytes (max 4 MB per file per poll).
   - `scp` — copies each file with `scp`, then appends only the new bytes. Heavier: the whole file crosses the network every poll.
 - **Only new, complete lines** are ingested: half-written last lines wait for the next poll, rotated/truncated files are detected and restart from the top, and the first pull of a file backfills at most its last 5 MB.
-- **One-click Docker stack** — Start/Stop Grafana, Loki and Alloy from the app; Grafana opens on a provisioned **Log Analyzer** dashboard (volume per server, errors per server, level breakdown, full-text search, live log view). Logs are kept 30 days.
+- **Grafana + Loki included** — the installer bundles the Windows builds of Grafana 11.4 and Loki 3.3; the app starts them when it opens and stops them when it closes (Start/Stop in the top bar). The app itself ships entries to Loki, so there is no separate log agent. Grafana Grafana opens on a provisioned **Log Analyzer** dashboard (volume per server, errors per server, level breakdown, full-text search, live log view). Logs are kept 30 days.
 - **Dashboard built into the app** — the Dashboard tab shows Grafana inside the window (full Grafana: explore, edit, sign in). "Open in browser" is still there if you prefer a tab.
 - Labels in Loki: `server` (the name you gave it) and `file` (the remote path), plus Loki's automatic `detected_level`.
 
 ## Requirements
 
 - Windows 10/11
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (running)
+- Nothing else: Grafana and Loki come with the installer (about 200 MB). Docker is optional (see below).
 - Windows' built-in OpenSSH client (`ssh`, `scp` — present by default on Windows 10 1809+)
 - **Key-based SSH access** to each server. Password logins are deliberately not supported: polls run unattended, so `BatchMode=yes` is always on and nothing ever waits for a prompt.
 
 ## Install
 
-Download `Log Analyzer Setup x.y.z.exe` (installer) or `Log Analyzer x.y.z.exe` (portable) from [Releases](../../releases), or build it yourself (below).
+Download `Log Analyzer Setup x.y.z.exe` from [Releases](../../releases), or build it yourself (below).
 
 ## Usage
 
@@ -63,10 +63,10 @@ Host keys are trusted on first connection (`StrictHostKeyChecking=accept-new`) a
 |---|---|
 | Servers + settings | `%APPDATA%\log-analyzer\config.json` |
 | Read offsets per file | `%APPDATA%\log-analyzer\offsets.json` |
-| Pulled logs (mounted into Alloy) | `%USERPROFILE%\LogAnalyzer\logs\<server>\<file>.log` |
-| Loki / Grafana data | Docker volumes `log-analyzer_loki-data`, `log-analyzer_grafana-data` |
+| Pulled logs (spool the app ships from) | `%USERPROFILE%\LogAnalyzer\logs\<server>\<file>.log` |
+| Loki / Grafana data, their logs | `%USERPROFILE%\LogAnalyzer\data\` |
 
-All Docker ports bind to `127.0.0.1` only: Grafana `3000`, Loki `3100`, Alloy UI `12345`.
+Grafana (`3000`) and Loki (`3100`) listen on `127.0.0.1` only. If something already answers on those ports, the app uses it instead of starting its own.
 
 ## Filtering logs
 
@@ -91,7 +91,7 @@ The dashboard JSON is generated: edit `stack/grafana/build-dashboard.js` and run
 
 1. no more SSH reads; a read already in flight is discarded;
 2. its pulled files in `%USERPROFILE%\LogAnalyzer\logs\<server>\` are deleted;
-3. its lines are deleted from Loki (`/loki/api/v1/delete`), with a second request 100 s later for lines Alloy was still shipping. Loki applies deletes with a delay, so the card shows "removing its logs from Grafana (N lines left)" until Loki returns none, usually within a few minutes. If the Grafana stack is not running, the cleanup waits and continues when it is.
+3. its lines are deleted from Loki (`/loki/api/v1/delete`), with a second request 100 s later for anything still being shipped. Loki applies deletes with a delay, so the card shows "removing its logs from Grafana (N lines left)" until Loki returns none, usually within a few minutes. If the Grafana stack is not running, the cleanup waits and continues when it is.
 
 **Start** reads the server again from its current files (the last 5 MB of each, as on a first pull). **Delete** removes the server and its logs the same way.
 
@@ -124,22 +124,21 @@ powershell -ExecutionPolicy Bypass -File mock\start-mock.ps1
 
 It creates its SSH key in `mock\.ssh\` (git-ignored) and prints what to enter in **+ Add server**: user `mock`, IP `127.0.0.1`, log directory `/var/log/mock`, and under *Advanced* port `2222` and the key path. Stop it with `docker compose -f mock\docker-compose.yml down -v`.
 
-## Run the stack without the app
+## Docker instead of the bundled stack (optional)
 
 ```bash
 cd stack
 docker compose up -d
 ```
 
-With no `LOGS_DIR` set it ingests `stack/sample-logs/`, so you can try the dashboard straight away. Point it at your own folder with `LOGS_DIR=C:\path\to\logs`; Alloy expects `<folder>\<server>\<file>.log`.
-
+starts the same Loki + Grafana in Docker on the same ports; the app finds them and uses them instead of starting its own.
 ## Develop
 
 ```bash
 npm install
 npm start        # run the app
 npm test         # unit tests
-npm run dist     # build dist\Log Analyzer Setup x.y.z.exe and the portable exe
+npm run dist     # download Grafana + Loki into vendor/, build dist\Log Analyzer Setup x.y.z.exe
 ```
 
 ```
@@ -149,12 +148,12 @@ src/main/       Electron main process
   discovery.js  scans the log directory, picks live files, skips rotations
   fetcher.js    batched ssh-tail / scp transfer and offset logic
   ssh.js        spawns ssh.exe / scp.exe
-  docker.js     docker compose up / down / ps
+  stack.js      starts/stops the bundled Loki + Grafana, writes their configs`n  shipper.js    pushes spooled entries to Loki (replaces a log agent)
   grafana-view.js  Grafana embedded as a native view in the window
   config.js     JSON config store
   validate.js   input validation and quoting
 src/renderer/   UI (plain HTML/CSS/JS, no framework)
-stack/          docker-compose.yml, Loki, Alloy and Grafana provisioning
+stack/          Loki config, Grafana provisioning + dashboard, optional docker-compose.yml`nscripts/        fetch-binaries.js: Windows builds of Grafana + Loki into vendor/
 ```
 
 ## License

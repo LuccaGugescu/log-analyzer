@@ -1,7 +1,7 @@
 name: log-analyzer
 
-# Local log pipeline: the Windows app pulls logs from remote servers into
-# ${LOGS_DIR}; Alloy tails that folder and ships lines to Loki; Grafana reads Loki.
+# Optional Docker alternative to the Loki + Grafana the app bundles: the app
+# pushes entries to Loki on 127.0.0.1:3100 either way, and uses whatever answers there.
 services:
   loki:
     image: grafana/loki:3.3.2
@@ -11,19 +11,6 @@ services:
       - loki-data:/loki
     ports:
       - "127.0.0.1:3100:3100"
-    restart: unless-stopped
-
-  alloy:
-    image: grafana/alloy:v1.5.1
-    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
-    volumes:
-      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
-      - ${LOGS_DIR:-./sample-logs}:/logs:ro
-      - alloy-data:/var/lib/alloy/data
-    ports:
-      - "127.0.0.1:12345:12345"
-    depends_on:
-      - loki
     restart: unless-stopped
 
   grafana:
@@ -49,5 +36,4 @@ services:
 
 volumes:
   loki-data:
-  alloy-data:
   grafana-data:

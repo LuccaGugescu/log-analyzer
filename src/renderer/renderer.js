@@ -277,33 +277,33 @@ window.api.onPollStatus((status) => {
 });
 window.api.onActivity(logActivity);
 
-// ---------- docker stack ----------
+// ---------- Grafana stack (bundled Loki + Grafana) ----------
 
-const SERVICE_COUNT = 3;
-const stack = { running: 0, busy: false };
+const stack = { running: 0, total: 2, busy: false };
 
 const renderStack = (result) => {
   const button = $('#stack-toggle');
   button.disabled = stack.busy || !result.ok;
   if (!result.ok) {
-    setStatus('#stack-state', 'err', 'Docker not running', result.output ?? '');
+    setStatus('#stack-state', 'err', 'unavailable', result.output ?? '');
     setAction(button, 'Start', true);
     return;
   }
   stack.running = result.services.filter((s) => s.state === 'running').length;
+  stack.total = result.services.length;
   const details = result.services.map((s) => `${s.name}: ${s.status}`).join('\n');
-  if (stack.running === SERVICE_COUNT) setStatus('#stack-state', 'ok', 'running', details);
-  else if (stack.running > 0) setStatus('#stack-state', 'idle', `${stack.running}/${SERVICE_COUNT} up`, details);
+  if (stack.running === stack.total) setStatus('#stack-state', 'ok', 'running', details);
+  else if (stack.running > 0) setStatus('#stack-state', 'idle', `${stack.running}/${stack.total} up`, details);
   else setStatus('#stack-state', 'off', 'stopped', details);
   // Partly up still offers Start: `up -d` brings the missing services back.
-  const fullyUp = stack.running === SERVICE_COUNT;
+  const fullyUp = stack.running === stack.total;
   setAction(button, fullyUp ? 'Stop' : 'Start', !fullyUp);
 };
 
 const refreshStack = async () => renderStack(await window.api.stackStatus());
 
 $('#stack-toggle').onclick = async (event) => {
-  const starting = stack.running < SERVICE_COUNT;
+  const starting = stack.running < stack.total;
   const label = starting ? 'Starting Grafana stack' : 'Stopping Grafana stack';
   stack.busy = true;
   event.target.disabled = true;

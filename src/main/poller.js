@@ -6,6 +6,7 @@ const { EventEmitter } = require('node:events');
 const { fetchNewLines } = require('./fetcher');
 const { discoverLogs } = require('./discovery');
 const { markEntries } = require('./entries');
+const { INDEX_FILE } = require('./shipper');
 const { readJson, writeJson } = require('./config');
 const { toSlug, remotePathToFileName } = require('./validate');
 
@@ -160,6 +161,10 @@ class Poller extends EventEmitter {
       }
       offsets[file.path] = result.offset;
     }
+
+    // Lets the shipper label entries with the real remote path, not the spool name.
+    const index = Object.fromEntries(files.map((f) => [remotePathToFileName(f.path), f.path]));
+    await fs.writeFile(path.join(serverDir, INDEX_FILE), JSON.stringify(index, null, 2));
 
     this.offsets[server.id] = offsets;
     this.saveState();

@@ -6,7 +6,6 @@ const { startOffset, completeLines, parseTailReply, BACKFILL_BYTES } = require('
 const { selectLogFiles, familyName, parseScan } = require('../src/main/discovery');
 const { validateServer, isValidTarget, remotePathToFileName, shellQuote, toSlug } = require('../src/main/validate');
 const { sshTarget, scpSource } = require('../src/main/ssh');
-const { parsePs } = require('../src/main/docker');
 
 const NOW = 1_800_000_000;
 const server = (overrides = {}) => ({
@@ -123,10 +122,4 @@ test('file and folder names are filesystem safe', () => {
 
 test('shellQuote survives single quotes', () => {
   assert.equal(shellQuote("/tmp/it's.log"), `'/tmp/it'\\''s.log'`);
-});
-
-test('parsePs accepts both docker compose output shapes', () => {
-  assert.equal(parsePs('{"Service":"loki","State":"running"}\n{"Service":"grafana","State":"running"}').length, 2);
-  assert.equal(parsePs('[{"Service":"loki","State":"running"}]').length, 1);
-  assert.equal(parsePs('').length, 0);
 });

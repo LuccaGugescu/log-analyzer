@@ -4,3 +4,4 @@ dist/
 !stack/sample-logs/**/*.log
 .env
 mock/.ssh/
+vendor/
