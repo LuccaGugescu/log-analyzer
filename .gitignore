@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.log
+!stack/sample-logs/**/*.log
+.env

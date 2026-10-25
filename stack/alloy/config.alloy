@@ -1,0 +1,38 @@
+// Every file the Windows app writes lands at /logs/<server>/<file>.log.
+local.file_match "pulled" {
+  path_targets = [{"__path__" = "/logs/*/*.log"}]
+  sync_period  = "5s"
+}
+
+loki.source.file "pulled" {
+  targets       = local.file_match.pulled.targets
+  forward_to    = [loki.process.labels.receiver]
+  tail_from_end = false
+}
+
+loki.process "labels" {
+  // Turn the folder layout into `server` and `file` labels.
+  stage.regex {
+    source     = "filename"
+    expression = "^/logs/(?P<server>[^/]+)/(?P<file>[^/]+)\\.log$"
+  }
+
+  stage.labels {
+    values = {
+      server = "",
+      file   = "",
+    }
+  }
+
+  stage.label_drop {
+    values = ["filename"]
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

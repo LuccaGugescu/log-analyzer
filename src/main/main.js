@@ -1,0 +1,128 @@
+'use strict';
+
+const path = require('node:path');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { ConfigStore } = require('./config');
+const { Poller } = require('./poller');
+const { sshExec } = require('./ssh');
+const { stackUp, stackDown, stackStatus, GRAFANA_URL } = require('./docker');
+const { validateServer, toSlug, isValidRemotePath, shellQuote } = require('./validate');
+
+const userData = app.getPath('userData');
+const logsDir = path.join(userData, 'logs');
+const stackDir = app.isPackaged ? path.join(process.resourcesPath, 'stack') : path.join(__dirname, '..', '..', 'stack');
+
+const store = new ConfigStore(path.join(userData, 'config.json'));
+const poller = new Poller({
+  getConfig: () => store.get(),
+  logsDir,
+  stateFile: path.join(userData, 'offsets.json'),
+  tempDir: app.getPath('temp'),
+});
+
+let window = null;
+const send = (channel, payload) => window?.webContents.send(channel, payload);
+poller.on('status', (status) => send('poll-status', status));
+poller.on('activity', (message) => send('activity', { at: new Date().toISOString(), message }));
+
+const normalizeServer = (input) => ({
+  id: input.id || undefined,
+  name: String(input.name ?? '').trim(),
+  target: String(input.target ?? '').trim(),
+  port: Number(input.port) || 22,
+  identityFile: String(input.identityFile ?? '').trim(),
+  mode: input.mode === 'tail' ? 'tail' : 'scp',
+  enabled: input.enabled !== false,
+  paths: [...new Set((input.paths ?? []).map((p) => String(p).trim()).filter(Boolean))],
+});
+
+const handlers = {
+  'config:get': () => ({ ...store.get(), running: poller.running, logsDir, grafanaUrl: GRAFANA_URL }),
+
+  'settings:save': (_event, settings) => {
+    store.setSettings(settings);
+    poller.restart();
+    return store.get();
+  },
+
+  'server:save': (_event, input) => {
+    const server = normalizeServer(input);
+    const errors = validateServer(server);
+    const clash = store.get().servers.find((s) => s.id !== server.id && toSlug(s.name) === toSlug(server.name));
+    if (clash) errors.push(`Another server is already called "${clash.name}".`);
+    if (errors.length > 0) return { ok: false, errors };
+    return { ok: true, server: store.upsertServer(server) };
+  },
+
+  'server:delete': (_event, id) => {
+    store.deleteServer(id);
+    poller.forget(id);
+    return { ok: true };
+  },
+
+  'server:test': async (_event, input) => {
+    const server = normalizeServer(input);
+    const result = await sshExec(server, 'echo connected; uname -sn', { timeoutMs: 20_000 });
+    return { ok: result.code === 0, output: result.code === 0 ? result.stdout.toString('utf8').trim() : result.stderr };
+  },
+
+  // Lists candidate log files so the user can tick them instead of typing paths.
+  'server:browse': async (_event, input, root) => {
+    const server = normalizeServer(input);
+    const dir = isValidRemotePath(root) ? root : '/var/log';
+    const command = `find ${shellQuote(dir)} -maxdepth 3 -type f 2>/dev/null | grep -Ev '\\.(gz|xz|bz2|zip|[0-9])$' | sort | head -500`;
+    const result = await sshExec(server, command, { timeoutMs: 30_000 });
+    if (result.code !== 0 && result.stdout.length === 0) return { ok: false, output: result.stderr || 'No files found.' };
+    return { ok: true, files: result.stdout.toString('utf8').split('\n').filter(Boolean) };
+  },
+
+  'poller:start': () => (poller.start(), true),
+  'poller:stop': () => (poller.stop(), false),
+  'poller:now': () => (poller.tick(), poller.running),
+
+  'stack:up': () => stackUp(stackDir, logsDir),
+  'stack:down': () => stackDown(stackDir, logsDir),
+  'stack:status': () => stackStatus(stackDir, logsDir),
+
+  'open:grafana': () => shell.openExternal(GRAFANA_URL),
+  'open:logs': () => shell.openPath(logsDir),
+
+  'dialog:key': async () => {
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Choose SSH private key',
+      defaultPath: path.join(app.getPath('home'), '.ssh'),
+      properties: ['openFile', 'showHiddenFiles'],
+    });
+    return result.canceled ? null : result.filePaths[0];
+  },
+};
+
+const createWindow = () => {
+  window = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    minWidth: 900,
+    minHeight: 600,
+    title: 'Log Analyzer',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  window.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  window.on('closed', () => (window = null));
+};
+
+app.whenReady().then(() => {
+  for (const [channel, handler] of Object.entries(handlers)) ipcMain.handle(channel, handler);
+  createWindow();
+  if (store.get().autoStart) poller.start();
+});
+
+app.on('window-all-closed', () => {
+  poller.stop();
+  app.quit();
+});
