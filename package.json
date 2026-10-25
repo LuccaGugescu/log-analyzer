@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
-    "dist": "electron-builder --win nsis portable"
+    "dist": "electron-builder --win nsis portable --publish never"
   },
   "devDependencies": {
     "electron": "33.2.1",
