@@ -41,10 +41,18 @@ const run = (command, args, { timeoutMs = 60_000 } = {}) =>
     });
   });
 
+// ssh wants a bare IPv6 address; scp needs it in brackets before ":path".
+const bareHost = (host) => host.replace(/^\[(.*)\]$/, '$1');
+const sshTarget = (server) => `${server.user}@${bareHost(server.host)}`;
+const scpSource = (server, remotePath) => {
+  const host = bareHost(server.host);
+  return `${server.user}@${host.includes(':') ? `[${host}]` : host}:${remotePath}`;
+};
+
 const sshExec = (server, remoteCommand, options) =>
-  run('ssh', [...baseOptions(server), '-p', String(server.port), '--', server.target, remoteCommand], options);
+  run('ssh', [...baseOptions(server), '-p', String(server.port), '--', sshTarget(server), remoteCommand], options);
 
 const scpDownload = (server, remotePath, localPath, options) =>
-  run('scp', [...baseOptions(server), '-q', '-P', String(server.port), '--', `${server.target}:${remotePath}`, localPath], options);
+  run('scp', [...baseOptions(server), '-q', '-P', String(server.port), '--', scpSource(server, remotePath), localPath], options);
 
-module.exports = { run, sshExec, scpDownload };
+module.exports = { run, sshExec, scpDownload, sshTarget, scpSource };

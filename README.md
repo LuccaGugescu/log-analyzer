@@ -19,12 +19,16 @@ A Windows desktop app that pulls log files from any number of Linux servers over
 
 ## Features
 
-- **Multiple servers** — each one is a `user@ip`, SSH port, optional private key and a list of remote log files.
-- **Pick files from the server** — "Select files from server…" lists files under `/var/log` (or any folder) over SSH so you tick them instead of typing paths.
+- **Multiple servers** — each one is a user, an IP/host and the log directory (e.g. `/var/log`). Port, private key and display name are optional.
+- **Finds the logs for you** — every log file in the directory (4 levels deep) is discovered automatically. To keep load on the server low, only what matters is imported:
+  - one file per rotation family: `server.log` is kept, `server.1.log`, `server.log.2`, `server-3.log`, `syslog.1`, `app-2026-10-24.log` are skipped (when there is no plain `server.log`, the newest rotation is used);
+  - compressed archives (`.gz`, `.xz`, `.zip`…), binary files (`wtmp`, `lastlog`, `.journal`…), empty files and files untouched for 30+ days are skipped;
+  - at most 50 files per server (most recently written first).
+  "Scan log directory" in the Add server dialog shows exactly what will be imported and why each other file is skipped. The directory is re-scanned every 5 minutes, so new logs are picked up.
 - **Polling every 15 s** (configurable, min 5 s). A slow server skips a beat instead of piling up overlapping transfers.
 - **Two transfer modes**
-  - `scp` — copies the file with `scp`, then appends only the bytes that are new since the last poll.
-  - `ssh tail` — one SSH round trip that sends only the new bytes. Use it for big files.
+  - `ssh tail` (default, lightest) — **one** SSH session per poll for all of the server's files, sending only the new bytes (max 4 MB per file per poll).
+  - `scp` — copies each file with `scp`, then appends only the new bytes. Heavier: the whole file crosses the network every poll.
 - **Only new, complete lines** are ingested: half-written last lines wait for the next poll, rotated/truncated files are detected and restart from the top, and the first pull of a file backfills at most its last 5 MB.
 - **One-click Docker stack** — Start/Stop Grafana, Loki and Alloy from the app; Grafana opens on a provisioned **Log Analyzer** dashboard (volume per server, errors per server, level breakdown, full-text search, live log view). Logs are kept 30 days.
 - **Dashboard built into the app** — the Dashboard tab shows Grafana inside the window (full Grafana: explore, edit, sign in). "Open in browser" is still there if you prefer a tab.
@@ -44,12 +48,12 @@ Download `Log Analyzer Setup x.y.z.exe` (installer) or `Log Analyzer x.y.z.exe` 
 ## Usage
 
 1. **Start** the Grafana stack from the top bar (first start pulls the images).
-2. **+ Add server** → name, `user@ip`, port, private key (blank = your default `~/.ssh` key / ssh-agent).
-3. **Test connection**, then **Select files from server…** or type paths one per line.
+2. **+ Add server** → user (e.g. `root`), IP, and the log directory (default `/var/log`). Under *Advanced*: port, private key (blank = your default `~/.ssh` key / ssh-agent), transfer mode.
+3. **Test connection**, then **Scan log directory** to preview which files will be imported.
 4. Save. Polling starts automatically; the dot turns green after the first successful pull.
 5. Switch to the **Dashboard** tab (or **Open Grafana** for http://localhost:3000 in your browser) (anonymous read access; admin login `admin` / `admin`, change it with `GRAFANA_ADMIN_PASSWORD`).
 
-The remote user needs read access to the selected files (e.g. add it to the `adm` group for `/var/log/syslog` on Debian/Ubuntu).
+The remote user needs read access to the log directory and its files (e.g. add it to the `adm` group for `/var/log/syslog` on Debian/Ubuntu).
 
 Host keys are trusted on first connection (`StrictHostKeyChecking=accept-new`) and pinned in your `known_hosts` after that.
 
@@ -86,7 +90,8 @@ npm run dist     # build dist\Log Analyzer Setup x.y.z.exe and the portable exe
 src/main/       Electron main process
   main.js       window + IPC
   poller.js     15 s loop, per-server state, appends to the logs folder
-  fetcher.js    scp / ssh-tail transfer and offset logic
+  discovery.js  scans the log directory, picks live files, skips rotations
+  fetcher.js    batched ssh-tail / scp transfer and offset logic
   ssh.js        spawns ssh.exe / scp.exe
   docker.js     docker compose up / down / ps
   grafana-view.js  Grafana embedded as a native view in the window

@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   saveServer: invoke('server:save'),
   deleteServer: invoke('server:delete'),
   testServer: invoke('server:test'),
-  browseServer: invoke('server:browse'),
+  scanServer: invoke('server:scan'),
   startPolling: invoke('poller:start'),
   stopPolling: invoke('poller:stop'),
   pollNow: invoke('poller:now'),

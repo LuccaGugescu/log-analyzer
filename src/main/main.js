@@ -7,7 +7,8 @@ const { Poller } = require('./poller');
 const { sshExec } = require('./ssh');
 const { stackUp, stackDown, stackStatus, GRAFANA_URL } = require('./docker');
 const { GrafanaView } = require('./grafana-view');
-const { validateServer, toSlug, isValidRemotePath, shellQuote } = require('./validate');
+const { discoverLogs } = require('./discovery');
+const { validateServer, toSlug } = require('./validate');
 
 const userData = app.getPath('userData');
 const logsDir = path.join(userData, 'logs');
@@ -27,19 +28,37 @@ const send = (channel, payload) => window?.webContents.send(channel, payload);
 poller.on('status', (status) => send('poll-status', status));
 poller.on('activity', (message) => send('activity', { at: new Date().toISOString(), message }));
 
-const normalizeServer = (input) => ({
-  id: input.id || undefined,
-  name: String(input.name ?? '').trim(),
-  target: String(input.target ?? '').trim(),
-  port: Number(input.port) || 22,
-  identityFile: String(input.identityFile ?? '').trim(),
-  mode: input.mode === 'tail' ? 'tail' : 'scp',
-  enabled: input.enabled !== false,
-  paths: [...new Set((input.paths ?? []).map((p) => String(p).trim()).filter(Boolean))],
-});
+const cleanList = (values) => [...new Set((values ?? []).map((v) => String(v).trim().replace(/(.)\/+$/, '$1')).filter(Boolean))];
+
+// Also upgrades v0.1 servers, which had `target: "user@ip"` and a list of files.
+const normalizeServer = (input) => {
+  const [legacyUser, legacyHost] = String(input.target ?? '').split('@');
+  const host = String(input.host ?? legacyHost ?? '').trim();
+  const legacyDirs = (input.paths ?? []).map((p) => path.posix.dirname(String(p)));
+  return {
+    id: input.id || undefined,
+    name: String(input.name ?? '').trim() || host,
+    user: String(input.user ?? legacyUser ?? '').trim(),
+    host,
+    port: Number(input.port) || 22,
+    identityFile: String(input.identityFile ?? '').trim(),
+    // Tail sends only new bytes in one session per poll: the lightest load on the server.
+    mode: input.mode === 'scp' ? 'scp' : 'tail',
+    enabled: input.enabled !== false,
+    logDirs: cleanList(input.logDirs ?? legacyDirs),
+  };
+};
+
+for (const server of store.get().servers) store.upsertServer(normalizeServer(server));
 
 const handlers = {
-  'config:get': () => ({ ...store.get(), running: poller.running, logsDir, grafanaUrl: GRAFANA_URL }),
+  'config:get': () => ({
+    ...store.get(),
+    running: poller.running,
+    logsDir,
+    grafanaUrl: GRAFANA_URL,
+    discovery: Object.fromEntries(store.get().servers.map((s) => [s.id, poller.discoveryFor(s.id)])),
+  }),
 
   'settings:save': (_event, settings) => {
     store.setSettings(settings);
@@ -53,7 +72,10 @@ const handlers = {
     const clash = store.get().servers.find((s) => s.id !== server.id && toSlug(s.name) === toSlug(server.name));
     if (clash) errors.push(`Another server is already called "${clash.name}".`);
     if (errors.length > 0) return { ok: false, errors };
-    return { ok: true, server: store.upsertServer(server) };
+    const saved = store.upsertServer(server);
+    poller.rescan(saved.id);
+    if (poller.running) poller.tick();
+    return { ok: true, server: saved };
   },
 
   'server:delete': (_event, id) => {
@@ -68,14 +90,16 @@ const handlers = {
     return { ok: result.code === 0, output: result.code === 0 ? result.stdout.toString('utf8').trim() : result.stderr };
   },
 
-  // Lists candidate log files so the user can tick them instead of typing paths.
-  'server:browse': async (_event, input, root) => {
+  // Preview of what polling would ship from the log directory, before saving.
+  'server:scan': async (_event, input) => {
     const server = normalizeServer(input);
-    const dir = isValidRemotePath(root) ? root : '/var/log';
-    const command = `find ${shellQuote(dir)} -maxdepth 3 -type f 2>/dev/null | grep -Ev '\\.(gz|xz|bz2|zip|[0-9])$' | sort | head -500`;
-    const result = await sshExec(server, command, { timeoutMs: 30_000 });
-    if (result.code !== 0 && result.stdout.length === 0) return { ok: false, output: result.stderr || 'No files found.' };
-    return { ok: true, files: result.stdout.toString('utf8').split('\n').filter(Boolean) };
+    const errors = validateServer(server);
+    if (errors.length > 0) return { ok: false, output: errors.join('\n') };
+    try {
+      return { ok: true, ...(await discoverLogs(server)) };
+    } catch (error) {
+      return { ok: false, output: error.message };
+    }
   },
 
   'poller:start': () => (poller.start(), true),

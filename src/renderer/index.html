@@ -72,56 +72,44 @@
       <input type="hidden" name="id" />
 
       <div class="grid">
-        <label>Name <input name="name" required placeholder="web-01" /></label>
-        <label>Target (user@ip) <input name="target" required placeholder="root@203.0.113.10" /></label>
-        <label>SSH port <input name="port" type="number" min="1" max="65535" value="22" /></label>
-        <label>Transfer mode
-          <select name="mode">
-            <option value="scp">scp – copy the file, keep only new lines</option>
-            <option value="tail">ssh tail – send only new bytes (large files)</option>
-          </select>
-        </label>
+        <label>User <input name="user" required placeholder="root" autocomplete="off" /></label>
+        <label>IP / host <input name="host" required placeholder="203.0.113.10" autocomplete="off" /></label>
       </div>
 
-      <label>Private key (blank = ssh default / agent)
-        <span class="row">
-          <input name="identityFile" placeholder="C:\Users\you\.ssh\id_ed25519" />
-          <button type="button" id="pick-key" class="secondary">Browse…</button>
-        </span>
+      <label>Log directory (one per line — every log inside is found automatically)
+        <textarea name="logDirs" rows="2" placeholder="/var/log">/var/log</textarea>
       </label>
 
-      <label>Remote log files (one absolute path per line)
-        <textarea name="paths" rows="5" placeholder="/var/log/syslog&#10;/var/log/nginx/access.log"></textarea>
-      </label>
-
-      <label class="inline"><input name="enabled" type="checkbox" checked /> Enabled</label>
+      <details class="advanced">
+        <summary>Advanced</summary>
+        <div class="grid">
+          <label>Display name <input name="name" placeholder="defaults to the IP" /></label>
+          <label>SSH port <input name="port" type="number" min="1" max="65535" value="22" /></label>
+        </div>
+        <label>Private key (blank = ssh default / agent)
+          <span class="row">
+            <input name="identityFile" placeholder="C:\Users\you\.ssh\id_ed25519" />
+            <button type="button" id="pick-key" class="secondary">Browse…</button>
+          </span>
+        </label>
+        <label>Transfer mode
+          <select name="mode">
+            <option value="tail">ssh tail – one session per poll, only new bytes (lightest)</option>
+            <option value="scp">scp – copy each file, keep only new lines (heavier)</option>
+          </select>
+        </label>
+        <label class="inline"><input name="enabled" type="checkbox" checked /> Enabled</label>
+      </details>
 
       <div class="row actions">
         <button type="button" id="test-server" class="secondary">Test connection</button>
-        <button type="button" id="browse-server" class="secondary">Select files from server…</button>
+        <button type="button" id="scan-server" class="secondary">Scan log directory</button>
         <span class="spacer"></span>
         <button type="button" id="cancel-server" class="secondary">Cancel</button>
         <button type="submit" id="save-server">Save</button>
       </div>
       <pre id="server-feedback" class="feedback" hidden></pre>
-    </form>
-  </dialog>
-
-  <dialog id="browse-dialog">
-    <form id="browse-form" method="dialog">
-      <h2>Select log files</h2>
-      <div class="row">
-        <input id="browse-root" value="/var/log" />
-        <button type="button" id="browse-refresh" class="secondary">List</button>
-      </div>
-      <input id="browse-filter" placeholder="Filter…" />
-      <ul id="browse-list" class="browse-list"></ul>
-      <div class="row actions">
-        <span id="browse-count" class="muted"></span>
-        <span class="spacer"></span>
-        <button type="button" id="browse-cancel" class="secondary">Cancel</button>
-        <button type="submit" id="browse-apply">Add selected</button>
-      </div>
+      <div id="scan-result" class="scan-result" hidden></div>
     </form>
   </dialog>
 

@@ -38,22 +38,29 @@ const renderServers = () => {
   for (const server of servers) {
     const status = state.statuses[server.id];
     const dotClass = server.enabled === false ? 'off' : !status ? 'idle' : status.ok ? 'ok' : 'err';
+    const discovery = state.config.discovery?.[server.id];
     const statusText = server.enabled === false
       ? 'disabled'
       : !status ? 'waiting for first poll'
-      : status.ok ? `ok · ${timeAgo(status.at)}`
-      : `error · ${timeAgo(status.at)}`;
+      : `${status.ok ? 'ok' : 'error'} · ${timeAgo(status.at)} · watching ${status.watching} files, skipped ${status.skipped}`;
 
     const edit = el('button', { className: 'secondary small', textContent: 'Edit', onclick: () => openServerDialog(server) });
     const remove = el('button', { className: 'danger small', textContent: 'Delete', onclick: () => deleteServer(server) });
+    const watched = discovery
+      ? el('details', { className: 'watched' }, [
+          el('summary', { className: 'muted small', textContent: `Files in Grafana (${discovery.kept.length})` }),
+          el('ul', { className: 'paths' }, discovery.kept.map((f) => el('li', { textContent: f.path }))),
+        ])
+      : '';
 
     const card = el('li', { className: 'server' }, [
       el('span', { className: `dot ${dotClass}`, title: statusText }),
       el('div', { className: 'server-main' }, [
         el('strong', { textContent: server.name }),
-        el('span', { className: 'muted', textContent: ` ${server.target}:${server.port} · ${server.mode}` }),
+        el('span', { className: 'muted', textContent: ` ${server.user}@${server.host}:${server.port} · ${server.mode}` }),
         el('div', { className: 'muted small', textContent: statusText }),
-        el('ul', { className: 'paths' }, server.paths.map((p) => el('li', { textContent: p }))),
+        el('ul', { className: 'paths' }, server.logDirs.map((dir) => el('li', { textContent: `${dir}/` }))),
+        watched,
         status && !status.ok ? el('pre', { className: 'feedback error', textContent: status.errors.join('\n') }) : '',
       ]),
       el('div', { className: 'server-actions' }, [edit, remove]),
@@ -84,27 +91,30 @@ const readServerForm = () => {
   return {
     id: data.get('id') || undefined,
     name: data.get('name'),
-    target: data.get('target'),
+    user: data.get('user'),
+    host: data.get('host'),
     port: Number(data.get('port')),
     identityFile: data.get('identityFile'),
     mode: data.get('mode'),
     enabled: serverForm.elements.enabled.checked,
-    paths: String(data.get('paths')).split(/\r?\n/).map((p) => p.trim()).filter(Boolean),
+    logDirs: String(data.get('logDirs')).split(/\r?\n/).map((p) => p.trim()).filter(Boolean),
   };
 };
 
 const openServerDialog = (server) => {
   serverForm.reset();
   feedback(null);
+  $('#scan-result').hidden = true;
   $('#server-dialog-title').textContent = server ? `Edit ${server.name}` : 'Add server';
   const fields = serverForm.elements;
   fields.id.value = server?.id ?? '';
   fields.name.value = server?.name ?? '';
-  fields.target.value = server?.target ?? '';
+  fields.user.value = server?.user ?? '';
+  fields.host.value = server?.host ?? '';
   fields.port.value = server?.port ?? 22;
   fields.identityFile.value = server?.identityFile ?? '';
-  fields.mode.value = server?.mode ?? 'scp';
-  fields.paths.value = (server?.paths ?? []).join('\n');
+  fields.mode.value = server?.mode ?? 'tail';
+  fields.logDirs.value = (server?.logDirs ?? ['/var/log']).join('\n');
   fields.enabled.checked = server?.enabled !== false;
   $('#server-dialog').showModal();
 };
@@ -142,52 +152,36 @@ $('#test-server').onclick = (event) =>
     feedback(result.output || (result.ok ? 'Connected.' : 'Failed.'), !result.ok);
   });
 
-// ---------- browse remote files ----------
+// ---------- scan preview ----------
 
-let browseFiles = [];
-const selected = new Set();
-
-const renderBrowse = () => {
-  const filter = $('#browse-filter').value.toLowerCase();
-  const list = $('#browse-list');
-  list.replaceChildren();
-  for (const file of browseFiles.filter((f) => f.toLowerCase().includes(filter))) {
-    const box = el('input', { type: 'checkbox', checked: selected.has(file) });
-    box.onchange = () => (box.checked ? selected.add(file) : selected.delete(file), updateBrowseCount());
-    list.append(el('li', {}, [el('label', {}, [box, ` ${file}`])]));
-  }
-  updateBrowseCount();
-};
-const updateBrowseCount = () => ($('#browse-count').textContent = `${selected.size} selected · ${browseFiles.length} found`);
-
-const listRemote = async () => {
-  $('#browse-list').replaceChildren(el('li', { className: 'muted', textContent: 'Listing…' }));
-  const result = await window.api.browseServer(readServerForm(), $('#browse-root').value.trim());
-  if (!result.ok) {
-    $('#browse-list').replaceChildren(el('li', { className: 'error', textContent: result.output }));
-    return;
-  }
-  browseFiles = result.files;
-  renderBrowse();
+// Shows which files polling will ship and why the others are left out, so the
+// user can check the directory before saving.
+const renderScan = ({ kept, skipped }) => {
+  const box = $('#scan-result');
+  const keptList = el('ul', { className: 'paths kept' }, kept.map((f) => el('li', { textContent: `${f.path}  (${formatSize(f.size)})` })));
+  const skippedList = el('ul', { className: 'paths' }, skipped.map((f) => el('li', { textContent: `${f.path} — ${f.reason}` })));
+  box.replaceChildren(
+    el('strong', { textContent: `Will import ${kept.length} file${kept.length === 1 ? '' : 's'}` }),
+    keptList,
+    skipped.length > 0
+      ? el('details', {}, [el('summary', { className: 'muted', textContent: `Skipped ${skipped.length} (rotated, old, empty or binary)` }), skippedList])
+      : '',
+  );
+  box.hidden = false;
 };
 
-$('#browse-server').onclick = () => {
-  const current = readServerForm();
-  selected.clear();
-  current.paths.forEach((p) => selected.add(p));
-  browseFiles = [];
-  $('#browse-filter').value = '';
-  $('#browse-dialog').showModal();
-  listRemote();
-};
-$('#browse-refresh').onclick = listRemote;
-$('#browse-filter').oninput = renderBrowse;
-$('#browse-cancel').onclick = () => $('#browse-dialog').close();
-$('#browse-form').addEventListener('submit', (event) => {
-  event.preventDefault();
-  serverForm.elements.paths.value = [...selected].join('\n');
-  $('#browse-dialog').close();
-});
+const formatSize = (bytes) =>
+  bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
+
+$('#scan-server').onclick = (event) =>
+  withBusy(event.target, async () => {
+    feedback('Scanning…');
+    $('#scan-result').hidden = true;
+    const result = await window.api.scanServer(readServerForm());
+    if (!result.ok) return feedback(result.output, true);
+    feedback(null);
+    renderScan(result);
+  });
 
 // ---------- polling ----------
 
@@ -212,8 +206,11 @@ $('#poll-seconds').onchange = async (event) => {
 };
 
 window.api.onPollStatus((status) => {
+  const previous = state.statuses[status.serverId];
   state.statuses[status.serverId] = status;
-  renderServers();
+  // The watched-file list lives in config; refetch it only when it changed.
+  if (previous?.watching !== status.watching || previous?.skipped !== status.skipped) reloadConfig();
+  else renderServers();
 });
 window.api.onActivity(logActivity);
 

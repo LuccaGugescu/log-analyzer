@@ -201,6 +201,20 @@ dialog h2 { margin-bottom: 14px; }
 }
 .feedback.error { color: var(--err); }
 
+.advanced { margin: 4px 0 6px; }
+.advanced summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
+.watched summary { cursor: pointer; margin-top: 4px; }
+.scan-result {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-height: 260px;
+  overflow: auto;
+}
+.scan-result .paths { margin: 6px 0; }
+.scan-result .kept li { color: var(--ok); }
+.scan-result summary { cursor: pointer; }
 .browse-list {
   margin-top: 8px;
   height: 320px;

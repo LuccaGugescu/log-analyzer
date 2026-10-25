@@ -8,7 +8,10 @@ const { shellQuote } = require('./validate');
 // On the first pull of a file only its tail is ingested, so adding a server
 // with a multi-GB log does not flood Loki with history.
 const BACKFILL_BYTES = 5 * 1024 * 1024;
+// Upper bound per file per poll; a file that grows faster catches up over the next polls.
+const MAX_CHUNK_BYTES = 4 * 1024 * 1024;
 const NEWLINE = 0x0a;
+const MARKER = '@@LA@@';
 
 // Where to start reading a remote file of `size` bytes, given what was already
 // ingested. `offset < 0` means never seen; `size < offset` means it was rotated
@@ -33,7 +36,7 @@ const fetchWithScp = async (server, remotePath, offset, tempDir) => {
     try {
       const { size } = await handle.stat();
       const start = startOffset(size, offset);
-      const buffer = Buffer.alloc(size - start);
+      const buffer = Buffer.alloc(Math.min(size - start, MAX_CHUNK_BYTES));
       if (buffer.length > 0) await handle.read(buffer, 0, buffer.length, start);
       const data = completeLines(buffer);
       return { data, offset: start + data.length };
@@ -45,34 +48,68 @@ const fetchWithScp = async (server, remotePath, offset, tempDir) => {
   }
 };
 
-// Tail mode: one ssh round trip that returns only the new bytes. The remote
-// script prints the offset it actually started from on the first line.
-const tailScript = (remotePath, offset) =>
+// Tail mode: ONE ssh session per poll for all of a server's files. For each
+// file the remote side prints "@@LA@@ <index> <start> <length>" followed by
+// exactly <length> new bytes (start -1 = unreadable).
+const tailScript = (files) =>
   [
-    `f=${shellQuote(remotePath)}`,
-    `o=${offset}`,
-    `b=${BACKFILL_BYTES}`,
-    `s=$(wc -c < "$f") || exit 3`,
-    `if [ "$o" -lt 0 ]; then o=$(( s > b ? s - b : 0 )); elif [ "$s" -lt "$o" ]; then o=0; fi`,
-    `echo "$o"`,
-    `tail -c +$(( o + 1 )) "$f" | head -c $(( s - o ))`,
-  ].join('; ');
+    `emit() { f=$1; o=$2`,
+    `if [ ! -r "$f" ]; then echo "${MARKER} $3 -1 0"; return; fi`,
+    `s=$(( $(wc -c < "$f") ))`,
+    `if [ "$o" -lt 0 ]; then o=$(( s > ${BACKFILL_BYTES} ? s - ${BACKFILL_BYTES} : 0 )); elif [ "$s" -lt "$o" ]; then o=0; fi`,
+    `n=$(( s - o )); if [ "$n" -gt ${MAX_CHUNK_BYTES} ]; then n=${MAX_CHUNK_BYTES}; fi`,
+    `echo "${MARKER} $3 $o $n"`,
+    `if [ "$n" -gt 0 ]; then tail -c +$(( o + 1 )) "$f" | head -c "$n"; fi; }`,
+    ...files.map(({ path: remotePath, offset }, index) => `emit ${shellQuote(remotePath)} ${offset} ${index}`),
+  ].join('\n');
 
-const fetchWithTail = async (server, remotePath, offset) => {
-  const result = await sshExec(server, tailScript(remotePath, offset), { timeoutMs: 120_000 });
-  if (result.code !== 0) throw new Error(result.stderr || `ssh exited with ${result.code}`);
+const HEADER_RE = /^@@LA@@ (\d+) (-?\d+) (\d+)$/;
 
-  const headerEnd = result.stdout.indexOf(NEWLINE);
-  const start = Number(result.stdout.subarray(0, headerEnd).toString('ascii'));
-  if (headerEnd < 0 || !Number.isFinite(start)) throw new Error('Unexpected reply from remote tail.');
-
-  const data = completeLines(result.stdout.subarray(headerEnd + 1));
-  return { data, offset: start + data.length };
+// Splits the batched reply back into one result per file. If the stream goes
+// out of step (a file shrank mid-read), the remaining files report an error
+// and keep their offsets, so nothing is skipped or duplicated.
+const parseTailReply = (stdout, files) => {
+  const results = files.map(() => ({ error: 'no reply' }));
+  let cursor = 0;
+  while (cursor < stdout.length) {
+    const headerEnd = stdout.indexOf(NEWLINE, cursor);
+    const match = headerEnd < 0 ? null : stdout.subarray(cursor, headerEnd).toString('ascii').match(HEADER_RE);
+    if (!match) {
+      for (const result of results) if (result.error === 'no reply') result.error = 'reply out of sync, retrying next poll';
+      break;
+    }
+    const [index, start, length] = [Number(match[1]), Number(match[2]), Number(match[3])];
+    const body = stdout.subarray(headerEnd + 1, headerEnd + 1 + length);
+    cursor = headerEnd + 1 + length;
+    if (index >= files.length) continue;
+    if (start < 0) {
+      results[index] = { error: 'not readable (missing or no permission)' };
+      continue;
+    }
+    const data = completeLines(body);
+    results[index] = { data, offset: start + data.length };
+  }
+  return results;
 };
 
-const fetchNewLines = (server, remotePath, offset, tempDir) =>
-  server.mode === 'tail'
-    ? fetchWithTail(server, remotePath, offset)
-    : fetchWithScp(server, remotePath, offset, tempDir);
+const fetchWithTail = async (server, files) => {
+  const result = await sshExec(server, tailScript(files), { timeoutMs: 120_000 });
+  if (result.code !== 0 && result.stdout.length === 0) throw new Error(result.stderr || `ssh exited with ${result.code}`);
+  return parseTailReply(result.stdout, files);
+};
 
-module.exports = { fetchNewLines, startOffset, completeLines, tailScript, BACKFILL_BYTES };
+// files: [{ path, offset }] -> [{ data, offset } | { error }] in the same order.
+const fetchNewLines = async (server, files, tempDir) => {
+  if (server.mode === 'tail') return fetchWithTail(server, files);
+  const results = [];
+  for (const file of files) {
+    try {
+      results.push(await fetchWithScp(server, file.path, file.offset, tempDir));
+    } catch (error) {
+      results.push({ error: error.message });
+    }
+  }
+  return results;
+};
+
+module.exports = { fetchNewLines, startOffset, completeLines, tailScript, parseTailReply, BACKFILL_BYTES, MAX_CHUNK_BYTES };
