@@ -6,8 +6,8 @@ const { EventEmitter } = require('node:events');
 const { readJson, writeJson } = require('./config');
 
 const LOKI_URL = 'http://127.0.0.1:3100';
-// Alloy may still be shipping lines it read just before the stop (multiline
-// entries wait up to 90s), so a second delete request covers that window.
+// The shipper may still push entries it read just before the stop (the last
+// entry of a file is held up to 90s), so a second delete request covers that window.
 const FOLLOW_UP_AFTER_MS = 100_000;
 const CHECK_EVERY_MS = 15_000;
 // Loki rejects a delete start of 0; anything before retention works.
@@ -35,7 +35,7 @@ const lokiDelete = async (slug, endMs) => {
 // right away, then its lines in Loki. Loki's delete API is eventually
 // consistent (queries can show the lines for a few more minutes), so each job
 // is re-checked until Loki returns none, and survives app restarts and a
-// stopped Docker stack. Emits "status" { serverId, phase, remaining, error }.
+// stopped Grafana stack. Emits "status" { serverId, phase, remaining, error }.
 class PurgeQueue extends EventEmitter {
   constructor({ stateFile }) {
     super();
@@ -65,8 +65,8 @@ class PurgeQueue extends EventEmitter {
     await this.run(serverId);
   }
 
-  // On Windows the folder can't be removed while Docker/Alloy still has its
-  // files open, so they are emptied first (nothing left to ship) and the
+  // On Windows the folder can't be removed while another process (the shipper,
+  // antivirus, a Docker bind mount) still has its files open, so they are emptied first (nothing left to ship) and the
   // folder is removed on a later check once the handles are released.
   async removeFolder(job) {
     try {
