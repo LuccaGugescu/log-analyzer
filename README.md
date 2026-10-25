@@ -85,9 +85,28 @@ Every line gets a `level` label (trace, debug, info, warn, error, fatal, or unkn
 
 The dashboard JSON is generated: edit `stack/grafana/build-dashboard.js` and run `node stack/grafana/build-dashboard.js`.
 
+## Multi-line entries (payloads, stack traces)
+
+A log entry that spans several lines stays **one entry** in Grafana: an API call followed by its request payload, the response line with its response payload, or an error with its stack trace:
+
+```
+2026-10-25T14:00:01Z INFO --> POST /api/orders req=r10003 user=alice
+Request body:
+{
+  "items": [ { "sku": "SKU-13", "qty": 2 } ]
+}
+2026-10-25T14:00:01Z INFO <-- 201 POST /api/orders req=r10003 45ms
+Response body:
+{ "orderId": 5003, "status": "created" }
+```
+
+shows up as two entries (request + payload, response + payload). Filter **Contains** with `req=r10003` to see the call and its response together.
+
+A new entry starts at a line beginning with a timestamp (`2026-10-25T14:00`, `2026/10/25 14:00`, `[25/Oct/2026:14:00`, `Oct 25 14:00:00`), a level word (`ERROR …`), a client IP (access logs) or a JSON-lines object (`{"time":…`). Every other line belongs to the entry above it. A file in which no line ever looks like an entry start keeps one entry per line, so unknown formats never collapse into one giant block. Entries are capped at 1000 lines.
+
 ## Try it with the mock server
 
-No server handy? `mock/` runs a fake Linux box in Docker: key-only SSH on `127.0.0.1:2222` and a generator writing app, nginx and worker logs into `/var/log/mock` every 2 s. It rotates `server.log` every ~3 minutes and leaves rotated files, archives, an empty file, a stale file and `wtmp` lying around, so you can watch discovery skip them.
+No server handy? `mock/` runs a fake Linux box in Docker: key-only SSH on `127.0.0.1:2222` and a generator writing app, nginx and worker logs into `/var/log/mock` every 2 s. It also writes `app/api.log` with request/response payload blocks and stack traces, rotates `server.log` every ~3 minutes and leaves rotated files, archives, an empty file, a stale file and `wtmp` lying around, so you can watch discovery skip them.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File mock\start-mock.ps1

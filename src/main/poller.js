@@ -5,6 +5,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { fetchNewLines } = require('./fetcher');
 const { discoverLogs } = require('./discovery');
+const { markEntries } = require('./entries');
 const { readJson, writeJson } = require('./config');
 const { toSlug, remotePathToFileName } = require('./validate');
 
@@ -15,7 +16,8 @@ const RESCAN_MS = 5 * 60 * 1000;
 // v0.1 stored the offsets map at the top level of the state file.
 const loadState = (file) => {
   const raw = readJson(file, {});
-  return raw.offsets ? { offsets: raw.offsets, discovered: raw.discovered ?? {} } : { offsets: raw, discovered: {} };
+  if (!raw.offsets) return { offsets: raw, discovered: {}, structured: {} };
+  return { offsets: raw.offsets, discovered: raw.discovered ?? {}, structured: raw.structured ?? {} };
 };
 
 // Pulls every enabled server on a fixed interval and appends new lines to
@@ -30,9 +32,11 @@ class Poller extends EventEmitter {
     this.tempDir = tempDir;
     // offsets[serverId][remotePath] = bytes of that remote file already ingested
     // discovered[serverId] = { at, kept: [{ path, size, mtime }], skipped: [{ path, reason }] }
+    // structured[serverId][remotePath] = file has timestamped entries, so multi-line blocks are grouped
     const state = loadState(stateFile);
     this.offsets = state.offsets;
     this.discovered = state.discovered;
+    this.structured = state.structured;
     this.busy = new Set();
     this.timer = null;
   }
@@ -65,6 +69,7 @@ class Poller extends EventEmitter {
   forget(serverId) {
     delete this.offsets[serverId];
     delete this.discovered[serverId];
+    delete this.structured[serverId];
     this.saveState();
   }
 
@@ -79,7 +84,7 @@ class Poller extends EventEmitter {
   }
 
   saveState() {
-    writeJson(this.stateFile, { offsets: this.offsets, discovered: this.discovered });
+    writeJson(this.stateFile, { offsets: this.offsets, discovered: this.discovered, structured: this.structured });
   }
 
   tick() {
@@ -139,7 +144,10 @@ class Poller extends EventEmitter {
         continue;
       }
       if (result.data.length > 0) {
-        await fs.appendFile(path.join(serverDir, remotePathToFileName(file.path)), result.data);
+        const structured = (this.structured[server.id] ??= {});
+        const entries = markEntries(result.data, structured[file.path] ?? false);
+        structured[file.path] = entries.structured;
+        await fs.appendFile(path.join(serverDir, remotePathToFileName(file.path)), entries.data);
         bytes += result.data.length;
       }
       offsets[file.path] = result.offset;

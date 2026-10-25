@@ -11,6 +11,21 @@ loki.source.file "pulled" {
 }
 
 loki.process "labels" {
+  // The app marks the first line of every entry with \x1E; unmarked lines
+  // (request/response payloads, stack traces) join the entry above them.
+  // max_wait_time is longer than the 15s poll so a block split across two
+  // polls still ends up whole.
+  stage.multiline {
+    firstline     = `^\x{1E}`
+    max_wait_time = "30s"
+    max_lines     = 1000
+  }
+
+  stage.replace {
+    expression = `(\x{1E})`
+    replace    = ""
+  }
+
   // Turn the folder layout into `server` and `file` labels.
   stage.regex {
     source     = "filename"

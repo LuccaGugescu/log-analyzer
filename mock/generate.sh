@@ -50,6 +50,23 @@ while true; do
   esac
   echo "$(now) $level $msg" >> "$root/app/server.log"
 
+  # Multi-line entries: an API call with its request payload, then the
+  # response with its payload (same req= id), and stack traces under errors.
+  # Each block is written with one printf, like a real logger flushing it.
+  if [ $(( i % 3 )) -eq 0 ]; then
+    req="r$(( 10000 + i ))"; qty=$(( i % 4 + 1 )); code=$(pick 201 201 201 400 500)
+    printf '%s INFO --> POST /api/orders req=%s user=%s\nRequest body:\n{\n  "items": [\n    { "sku": "SKU-%s", "qty": %s }\n  ],\n  "currency": "EUR"\n}\n' \
+      "$(now)" "$req" "$user" "$(( i % 90 + 10 ))" "$qty" >> "$root/app/api.log"
+    case $code in
+      201) printf '%s INFO <-- 201 POST /api/orders req=%s %sms\nResponse body:\n{\n  "orderId": %s,\n  "status": "created",\n  "total": %s.90\n}\n' \
+             "$(now)" "$req" "$(( i % 300 + 20 ))" "$(( 5000 + i ))" "$(( qty * 15 ))" >> "$root/app/api.log" ;;
+      400) printf '%s WARN <-- 400 POST /api/orders req=%s %sms\nResponse body:\n{\n  "error": "validation_failed",\n  "details": [ "qty must be <= 3" ]\n}\n' \
+             "$(now)" "$req" "$(( i % 50 + 5 ))" >> "$root/app/api.log" ;;
+      500) printf '%s ERROR <-- 500 POST /api/orders req=%s %sms\njava.lang.IllegalStateException: inventory service unavailable\n\tat com.shop.orders.Inventory.reserve(Inventory.java:88)\n\tat com.shop.orders.OrderService.create(OrderService.java:41)\n\tat com.shop.api.OrdersController.post(OrdersController.java:27)\nCaused by: java.net.SocketTimeoutException: connect timed out\n\tat java.base/java.net.Socket.connect(Socket.java:633)\n' \
+             "$(now)" "$req" "$(( i % 900 + 3000 ))" >> "$root/app/api.log" ;;
+    esac
+  fi
+
   status=$(pick 200 200 200 200 201 304 404 500)
   path=$(pick / /api/products /api/orders /login /static/app.js)
   echo "10.0.0.$(( i % 250 + 1 )) - - [$(date -u '+%d/%b/%Y:%H:%M:%S +0000')] \"GET $path HTTP/1.1\" $status 512 \"-\" \"Mozilla/5.0\"" >> "$root/nginx/access.log"
