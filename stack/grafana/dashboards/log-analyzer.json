@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -55,6 +55,35 @@
         "sort": 1
       },
       {
+        "name": "dir",
+        "label": "Directory",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "query": {
+          "label": "dir",
+          "type": 1,
+          "stream": "{server=~\"$server\"}",
+          "refId": "dir"
+        },
+        "definition": "label_values({server=~\"$server\"}, dir)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
         "name": "file",
         "label": "File",
         "type": "query",
@@ -65,10 +94,10 @@
         "query": {
           "label": "file",
           "type": 1,
-          "stream": "{server=~\"$server\"}",
+          "stream": "{server=~\"$server\", dir=~\"$dir\"}",
           "refId": "file"
         },
-        "definition": "label_values({server=~\"$server\"}, file)",
+        "definition": "label_values({server=~\"$server\", dir=~\"$dir\"}, file)",
         "multi": true,
         "includeAll": true,
         "allValue": ".+",
@@ -320,7 +349,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (level) (count_over_time({server=~\"$server\", file=~\"$file\", level=~\"$level\"} |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}` [$__auto]))",
+          "expr": "sum by (level) (count_over_time({server=~\"$server\", dir=~\"$dir\", file=~\"$file\", level=~\"$level\"} |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}` [$__auto]))",
           "legendFormat": "{{level}}"
         }
       ]
@@ -328,7 +357,7 @@
     {
       "id": 2,
       "type": "timeseries",
-      "title": "Lines by server",
+      "title": "Lines by directory",
       "gridPos": {
         "x": 12,
         "y": 0,
@@ -364,8 +393,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (server) (count_over_time({server=~\"$server\", file=~\"$file\", level=~\"$level\"} |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}` [$__auto]))",
-          "legendFormat": "{{server}}"
+          "expr": "sum by (server, dir) (count_over_time({server=~\"$server\", dir=~\"$dir\", file=~\"$file\", level=~\"$level\"} |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}` [$__auto]))",
+          "legendFormat": "{{server}} · {{dir}}"
         }
       ]
     },
@@ -404,7 +433,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({server=~\"$server\", file=~\"$file\", level=~\"$level\"} |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}` [$__auto]))",
+          "expr": "sum(count_over_time({server=~\"$server\", dir=~\"$dir\", file=~\"$file\", level=~\"$level\"} |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}` [$__auto]))",
           "queryType": "range"
         }
       ]
@@ -453,7 +482,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({server=~\"$server\", file=~\"$file\", level=~\"$level\"} | level=~\"error|fatal\" |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}` [$__auto]))",
+          "expr": "sum(count_over_time({server=~\"$server\", dir=~\"$dir\", file=~\"$file\", level=~\"$level\"} | level=~\"error|fatal\" |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}` [$__auto]))",
           "queryType": "range"
         }
       ]
@@ -494,7 +523,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(5, sum by (server, file) (count_over_time({server=~\"$server\", file=~\"$file\", level=~\"$level\"} |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}` [$__auto])))",
+          "expr": "topk(5, sum by (server, file) (count_over_time({server=~\"$server\", dir=~\"$dir\", file=~\"$file\", level=~\"$level\"} |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}` [$__auto])))",
           "legendFormat": "{{server}} · {{file}}",
           "queryType": "range"
         }
@@ -527,7 +556,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{server=~\"$server\", file=~\"$file\", level=~\"$level\"} |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}`"
+          "expr": "{server=~\"$server\", dir=~\"$dir\", file=~\"$file\", level=~\"$level\"} |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}`"
         }
       ]
     }

@@ -32,7 +32,7 @@ A Windows desktop app that pulls log files from any number of Linux servers over
 - **Only new, complete lines** are ingested: half-written last lines wait for the next poll, rotated/truncated files are detected and restart from the top, and the first pull of a file backfills at most its last 5 MB.
 - **Grafana + Loki included** — the installer bundles the Windows builds of Grafana 11.4 and Loki 3.3; the app starts them when it opens and stops them when it closes (Start/Stop in the top bar). The app itself ships entries to Loki, so there is no separate log agent. Grafana Grafana opens on a provisioned **Log Analyzer** dashboard (volume per server, errors per server, level breakdown, full-text search, live log view). Logs are kept 30 days.
 - **Dashboard built into the app** — the Dashboard tab shows Grafana inside the window (full Grafana: explore, edit, sign in). "Open in browser" is still there if you prefer a tab.
-- Labels in Loki: `server` (the name you gave it) and `file` (the remote path), plus Loki's automatic `detected_level`.
+- Labels in Loki: `server` (the name you gave it), `dir` (the configured log directory the file was found under), `file` (the remote path) and `level`, plus Loki's automatic `detected_level`.
 
 ## Requirements
 
@@ -74,7 +74,7 @@ The **Dashboard** (Grafana dashboard) has a filter bar; every filter combines wi
 
 | Filter | How |
 |---|---|
-| Server / File / Level | pick one or more |
+| Server / Directory / File / Level | pick one or more |
 | Contains (regex) | type a word or regex, press Enter; add several to OR them (`error`, `timeout`, `user=(alice\|bob)`). Case-insensitive. |
 | Excludes (regex) | same, hides matching lines (`health check`, `GET /static`) |
 | Label filters | `+` to add `label = / != / =~ / !~ value`; or open a log line and click the **+ / −** magnifier next to a label to filter for / against it |
@@ -84,6 +84,31 @@ The **Dashboard** (Grafana dashboard) has a filter bar; every filter combines wi
 Every line gets a `level` label (trace, debug, info, warn, error, fatal, or unknown) taken from the first level word in the line.
 
 The dashboard JSON is generated: edit `stack/grafana/build-dashboard.js` and run `node stack/grafana/build-dashboard.js`.
+
+## Several directories on one server
+
+One server can read any number of directories: in **+ Add server** (or **Edit**), put one directory per line in *Log directories*:
+
+```
+/var/log/app1
+/opt/service/logs
+/home/batch/logs
+```
+
+Adding a directory later is that one extra line; save, and it is scanned right away. Each directory is searched 4 levels deep, and the 50-file limit is per server across all its directories.
+
+Every line is labeled `dir` with the directory it came from, exactly as you typed it (trailing `/` dropped; with nested directories the deepest one wins). Pick it in the dashboard's **Directory** filter, or query it in Grafana **Explore** (Loki datasource):
+
+```logql
+{server="web-01", dir="/opt/service/logs"}
+{dir="/var/log/app1"} |= "ERROR"
+{server="web-01", dir=~"/opt/.*"} | level=~"error|fatal"
+sum by (dir) (count_over_time({server="web-01"}[5m]))
+```
+
+Lines shipped before the `dir` label existed have none; the dashboard still shows them when Directory is *All*.
+
+**Check that a directory arrives:** after saving, **Scan log directory** lists the files it will import; the server card turns green after the first pull; then in Explore run `{server="web-01", dir="/opt/service/logs"}` over the last 15 minutes. Nothing there? The remote user probably can't read the directory: `ssh user@host 'ls -l /opt/service/logs'`.
 
 ## Stopping a server
 

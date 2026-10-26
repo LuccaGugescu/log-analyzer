@@ -11,7 +11,8 @@ const ds = { type: 'loki', uid: 'loki' };
 // own regex, they are OR-ed with `|`. Their defaults are regexes that match
 // everything / nothing, because an empty `!~ ""` would hide every line.
 // Backtick strings keep regex backslashes literal.
-const selector = '{server=~"$server", file=~"$file", level=~"$level"}';
+// `dir` matches ".*" for All so lines shipped before the label existed still show.
+const selector = '{server=~"$server", dir=~"$dir", file=~"$file", level=~"$level"}';
 const lineFilters = ' |~ `(?i)${include:pipe}` !~ `(?i)${exclude:pipe}`';
 const logs = selector + lineFilters;
 const countBy = (by, range = '$__auto') => `sum by (${by}) (count_over_time(${logs} [${range}]))`;
@@ -26,7 +27,7 @@ const queryVar = (name, label, definition, extra = {}) => ({
   definition,
   multi: true,
   includeAll: true,
-  allValue: '.+',
+  allValue: extra.allValue ?? '.+',
   current: { text: ['All'], value: ['$__all'] },
   refresh: 2,
   sort: 1,
@@ -89,7 +90,7 @@ const dashboard = {
   tags: ['logs'],
   timezone: 'browser',
   schemaVersion: 39,
-  version: 2,
+  version: 3,
   refresh: '30s',
   time: { from: 'now-1h', to: 'now' },
   links: [
@@ -105,7 +106,8 @@ const dashboard = {
   templating: {
     list: [
       queryVar('server', 'Server', 'label_values(server)'),
-      queryVar('file', 'File', 'label_values({server=~"$server"}, file)', { stream: '{server=~"$server"}' }),
+      queryVar('dir', 'Directory', 'label_values({server=~"$server"}, dir)', { stream: '{server=~"$server"}', allValue: '.*' }),
+      queryVar('file', 'File', 'label_values({server=~"$server", dir=~"$dir"}, file)', { stream: '{server=~"$server", dir=~"$dir"}' }),
       queryVar('level', 'Level', 'label_values({server=~"$server"}, level)', { stream: '{server=~"$server"}' }),
       customVar('include', 'Contains (regex)', 'anything', '(?:)', 'Type a word or regex and press Enter; several values are OR-ed. Case-insensitive.'),
       customVar('exclude', 'Excludes (regex)', 'nothing', '[^\\s\\S]', 'Type a word or regex and press Enter to hide matching lines; several values are OR-ed.'),
@@ -114,7 +116,7 @@ const dashboard = {
   },
   panels: [
     timeseries(1, 'Lines by level', countBy('level'), { x: 0, y: 0, w: 12, h: 8 }, '{{level}}', levelColors),
-    timeseries(2, 'Lines by server', countBy('server'), { x: 12, y: 0, w: 12, h: 8 }, '{{server}}'),
+    timeseries(2, 'Lines by directory', countBy('server, dir'), { x: 12, y: 0, w: 12, h: 8 }, '{{server}} · {{dir}}'),
     stat(3, 'Lines', countAll(), { x: 0, y: 8, w: 6, h: 4 }),
     stat(4, 'Errors', countAll(' | level=~"error|fatal"'), { x: 6, y: 8, w: 6, h: 4 }, true),
     {

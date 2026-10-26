@@ -106,4 +106,16 @@ const discoverLogs = async (server) => {
   return { at: new Date().toISOString(), ...selectLogFiles(entries) };
 };
 
-module.exports = { discoverLogs, selectLogFiles, familyName, parseScan, scanScript, MAX_FILES_PER_SERVER };
+// The configured log directory a discovered file lives under, as the user typed
+// it (without trailing slashes); the most specific one wins when dirs nest.
+const logDirOf = (remotePath, logDirs) => {
+  let best = null;
+  for (const raw of logDirs ?? []) {
+    const dir = raw.length > 1 ? raw.replace(/\/+$/, '') : raw;
+    const inside = dir === '/' || remotePath === dir || remotePath.startsWith(`${dir}/`);
+    if (inside && (best === null || dir.length > best.length)) best = dir;
+  }
+  return best;
+};
+
+module.exports = { discoverLogs, selectLogFiles, familyName, parseScan, scanScript, logDirOf, MAX_FILES_PER_SERVER };

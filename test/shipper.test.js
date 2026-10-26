@@ -56,3 +56,33 @@ test('shipper pushes whole entries with the remote path, holds the growing last 
   await shipper.shipAll();
   assert.equal(pushes.length, 1);
 });
+
+test('shipper labels entries with the configured directory', async (t) => {
+  const pushes = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', () => {
+      pushes.push(JSON.parse(body));
+      res.writeHead(204).end();
+    });
+  });
+  await new Promise((resolve) => server.listen(3100, '127.0.0.1', resolve)).catch(() => t.skip('port 3100 busy'));
+  t.after(() => server.close());
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'la-ship-'));
+  const dir = path.join(root, 'web-01');
+  fs.mkdirSync(dir);
+  const index = { 'opt_svc_logs_a.log.log': { path: '/opt/svc/logs/a.log', dir: '/opt/svc/logs' } };
+  fs.writeFileSync(path.join(dir, INDEX_FILE), JSON.stringify(index));
+  fs.writeFileSync(path.join(dir, 'opt_svc_logs_a.log.log'), `${M}2026 WARN slow
+${M}2026 INFO ok
+`);
+
+  const shipper = new Shipper({ logsDir: root, stateFile: path.join(root, 'shipped.json') });
+  await shipper.shipAll();
+  assert.equal(shipper.lastError, null);
+  assert.deepEqual(pushes[0].streams[0].stream, {
+    server: 'web-01', dir: '/opt/svc/logs', file: '/opt/svc/logs/a.log', level: 'warn', service_name: 'web-01',
+  });
+});

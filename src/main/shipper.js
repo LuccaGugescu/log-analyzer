@@ -36,6 +36,11 @@ const capEntry = (text) => {
   return Buffer.byteLength(joined) > MAX_ENTRY_BYTES ? `${joined.slice(0, MAX_ENTRY_BYTES)} … [cut]` : joined;
 };
 
+// Index values are { path, dir }; before the `dir` label they were the bare
+// remote path, and a spool file missing from the index ships under its own name.
+const sourceOf = (indexed, spoolName) =>
+  typeof indexed === 'object' && indexed !== null ? indexed : { path: indexed ?? spoolName, dir: null };
+
 // Splits spool text into entries. Every entry starts with ENTRY_MARK at the
 // beginning of a line; text before the first mark belongs to an entry that
 // was already shipped and is attached as its own entry only if nothing else
@@ -96,10 +101,10 @@ class Shipper {
     const dir = path.join(this.logsDir, server);
     const index = readJson(path.join(dir, INDEX_FILE), {});
     const names = (await fs.readdir(dir).catch(() => [])).filter((name) => name.endsWith('.log'));
-    for (const name of names) await this.shipFile(server, path.join(dir, name), index[name] ?? name);
+    for (const name of names) await this.shipFile(server, path.join(dir, name), sourceOf(index[name], name));
   }
 
-  async shipFile(server, file, remotePath) {
+  async shipFile(server, file, source) {
     const stat = await fs.stat(file).catch(() => null);
     if (!stat) return;
     let offset = this.shipped[file] ?? 0;
@@ -132,12 +137,12 @@ class Shipper {
     }
 
     const entries = splitEntries(shipText);
-    if (entries.length > 0) await this.push(server, remotePath, entries);
+    if (entries.length > 0) await this.push(server, source, entries);
     this.shipped[file] = offset + Buffer.byteLength(shipText);
     this.save();
   }
 
-  async push(server, remotePath, entries) {
+  async push(server, source, entries) {
     // One stream per level; timestamps are unique and increasing per stream.
     const streams = new Map();
     const base = BigInt(Date.now()) * 1_000_000n;
@@ -151,7 +156,7 @@ class Shipper {
     }
     const body = {
       streams: [...streams].map(([level, values]) => ({
-        stream: { server, file: remotePath, level, service_name: server },
+        stream: { server, ...(source.dir ? { dir: source.dir } : {}), file: source.path, level, service_name: server },
         values,
       })),
     };

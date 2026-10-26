@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { startOffset, completeLines, parseTailReply, BACKFILL_BYTES } = require('../src/main/fetcher');
-const { selectLogFiles, familyName, parseScan } = require('../src/main/discovery');
+const { selectLogFiles, familyName, parseScan, logDirOf } = require('../src/main/discovery');
 const { validateServer, isValidTarget, remotePathToFileName, shellQuote, toSlug } = require('../src/main/validate');
 const { sshTarget, scpSource } = require('../src/main/ssh');
 
@@ -78,6 +78,15 @@ test('parseScan reads "mtime size path" lines, spaces in paths included', () => 
   assert.deepEqual(parseScan('1700000000 42 /var/log/my app.log\ngarbage\n'), [
     { path: '/var/log/my app.log', mtime: 1700000000, size: 42 },
   ]);
+});
+
+test('logDirOf finds the configured directory a file came from', () => {
+  const dirs = ['/var/log/', '/opt/service/logs', '/opt/service/logs/audit'];
+  assert.equal(logDirOf('/var/log/app1/server.log', dirs), '/var/log');
+  assert.equal(logDirOf('/opt/service/logs/a/b.log', dirs), '/opt/service/logs');
+  assert.equal(logDirOf('/opt/service/logs/audit/x.log', dirs), '/opt/service/logs/audit');
+  assert.equal(logDirOf('/opt/service/logsX/y.log', dirs), null);
+  assert.equal(logDirOf('/srv/z.log', ['/']), '/');
 });
 
 test('parseTailReply splits one batched reply per file', () => {

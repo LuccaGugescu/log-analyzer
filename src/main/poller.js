@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { fetchNewLines } = require('./fetcher');
-const { discoverLogs } = require('./discovery');
+const { discoverLogs, logDirOf } = require('./discovery');
 const { markEntries } = require('./entries');
 const { INDEX_FILE } = require('./shipper');
 const { readJson, writeJson } = require('./config');
@@ -162,8 +162,11 @@ class Poller extends EventEmitter {
       offsets[file.path] = result.offset;
     }
 
-    // Lets the shipper label entries with the real remote path, not the spool name.
-    const index = Object.fromEntries(files.map((f) => [remotePathToFileName(f.path), f.path]));
+    // Lets the shipper label entries with the real remote path, not the spool
+    // name, and with the configured directory the file was found under.
+    const index = Object.fromEntries(
+      files.map((f) => [remotePathToFileName(f.path), { path: f.path, dir: logDirOf(f.path, server.logDirs) }]),
+    );
     await fs.writeFile(path.join(serverDir, INDEX_FILE), JSON.stringify(index, null, 2));
 
     this.offsets[server.id] = offsets;
