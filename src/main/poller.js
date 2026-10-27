@@ -92,13 +92,31 @@ class Poller extends EventEmitter {
     writeJson(this.stateFile, { offsets: this.offsets, discovered: this.discovered, structured: this.structured });
   }
 
+  // Emits "polling" when a server's pull starts and ends, so the UI can show
+  // it in progress. Returns which servers started and which were still busy.
   tick() {
+    const started = [];
+    const skipped = [];
     for (const server of this.getConfig().servers) {
+      if (server.enabled === false) continue;
       // A slow server must not pile up overlapping pulls; it simply skips a beat.
-      if (server.enabled === false || this.busy.has(server.id)) continue;
+      if (this.busy.has(server.id)) {
+        skipped.push(server);
+        continue;
+      }
       this.busy.add(server.id);
-      this.pollServer(server).finally(() => this.busy.delete(server.id));
+      started.push(server);
+      this.emit('polling', { serverId: server.id, polling: true });
+      this.pollServer(server).finally(() => {
+        this.busy.delete(server.id);
+        this.emit('polling', { serverId: server.id, polling: false });
+      });
     }
+    return { started, skipped };
+  }
+
+  pollingIds() {
+    return [...this.busy];
   }
 
   async refreshDiscovery(server) {

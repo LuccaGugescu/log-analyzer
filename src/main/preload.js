@@ -34,5 +34,6 @@ contextBridge.exposeInMainWorld('api', {
   openLogs: invoke('open:logs'),
   pickKey: invoke('dialog:key'),
   onPollStatus: subscribe('poll-status'),
+  onPollProgress: subscribe('poll-progress'),
   onActivity: subscribe('activity'),
 });

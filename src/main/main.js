@@ -42,6 +42,7 @@ const send = (channel, payload) => window?.webContents.send(channel, payload);
 poller.on('status', (status) => send('poll-status', status));
 const activity = (message) => send('activity', { at: new Date().toISOString(), message });
 poller.on('activity', activity);
+poller.on('polling', (progress) => send('poll-progress', progress));
 purges.on('status', (status) => send('purge-status', status));
 
 const cleanList = (values) => [...new Set((values ?? []).map((v) => String(v).trim().replace(/(.)\/+$/, '$1')).filter(Boolean))];
@@ -71,6 +72,7 @@ const handlers = {
   'config:get': () => ({
     ...store.get(),
     running: poller.running,
+    polling: poller.pollingIds(),
     logsDir,
     grafanaUrl: GRAFANA_URL,
     discovery: Object.fromEntries(store.get().servers.map((s) => [s.id, poller.discoveryFor(s.id)])),
@@ -154,7 +156,14 @@ const handlers = {
 
   'poller:start': () => (poller.start(), true),
   'poller:stop': () => (poller.stop(), false),
-  'poller:now': () => (poller.tick(), poller.running),
+  'poller:now': () => {
+    const { started, skipped } = poller.tick();
+    const names = (servers) => servers.map((s) => s.name).join(', ');
+    if (started.length > 0) activity(`Polling now: ${names(started)}`);
+    if (skipped.length > 0) activity(`${names(skipped)}: previous poll still running, not started again`);
+    if (started.length + skipped.length === 0) activity('Nothing to poll: no running servers');
+    return poller.running;
+  },
 
   'stack:up': () => stack.start(),
   'stack:down': () => stack.stop(),

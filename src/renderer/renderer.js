@@ -1,7 +1,8 @@
 'use strict';
 
 const $ = (selector) => document.querySelector(selector);
-const state = { config: null, statuses: {} };
+// polling: ids of servers whose pull is in progress right now.
+const state = { config: null, statuses: {}, polling: new Set() };
 const MAX_ACTIVITY = 300;
 
 const el = (tag, props = {}, children = []) => {
@@ -39,12 +40,16 @@ const renderServers = () => {
     const status = state.statuses[server.id];
     const stopped = server.enabled === false;
     const purge = state.config.purges?.[server.id];
-    const dotClass = stopped ? 'off' : !status ? 'idle' : status.ok ? 'ok' : 'err';
+    const polling = !stopped && state.polling.has(server.id);
+    const dotClass = stopped ? 'off' : polling ? 'polling' : !status ? 'idle' : status.ok ? 'ok' : 'err';
     const discovery = state.config.discovery?.[server.id];
+    const lastPoll = !status
+      ? 'waiting for first poll'
+      : `${status.ok ? 'ok' : 'error'} · ${timeAgo(status.at)} · watching ${status.watching} files, skipped ${status.skipped}`;
     const statusText = stopped
       ? `stopped · ${purgeText(purge)}`
-      : !status ? 'waiting for first poll'
-      : `${status.ok ? 'ok' : 'error'} · ${timeAgo(status.at)} · watching ${status.watching} files, skipped ${status.skipped}`;
+      : polling ? `polling… · last: ${lastPoll}`
+      : lastPoll;
 
     const toggle = stopped
       ? el('button', {
@@ -254,6 +259,15 @@ const renderPolling = () => {
   setStatus('#poll-state', running ? 'ok' : 'off', running ? 'running' : 'paused');
   setAction($('#poll-toggle'), running ? 'Pause' : 'Resume', !running);
   $('#poll-seconds').value = state.config.pollSeconds;
+  renderPollNow();
+};
+
+// Busy while any server is mid-pull: another click would skip those servers anyway.
+const renderPollNow = () => {
+  const button = $('#poll-now');
+  const busy = state.polling.size > 0;
+  button.disabled = busy;
+  button.textContent = busy ? `Polling ${state.polling.size}…` : 'Poll now';
 };
 
 $('#poll-toggle').onclick = async () => {
@@ -274,6 +288,12 @@ window.api.onPollStatus((status) => {
   // The watched-file list lives in config; refetch it only when it changed.
   if (previous?.watching !== status.watching || previous?.skipped !== status.skipped) reloadConfig();
   else renderServers();
+});
+window.api.onPollProgress(({ serverId, polling }) => {
+  if (polling) state.polling.add(serverId);
+  else state.polling.delete(serverId);
+  renderPollNow();
+  if (state.config) renderServers();
 });
 window.api.onActivity(logActivity);
 
@@ -369,6 +389,7 @@ $('#dashboard-external').onclick = () => window.api.openGrafana();
 
 const reloadConfig = async () => {
   state.config = await window.api.getConfig();
+  state.polling = new Set(state.config.polling);
   renderServers();
   renderPolling();
 };

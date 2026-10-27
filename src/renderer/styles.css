@@ -175,6 +175,9 @@ label.inline input[type="number"] { width: 64px; }
 .dot.err { background: var(--err); }
 .dot.idle { background: var(--warn); }
 .dot.off { background: var(--border); }
+.dot.polling { background: var(--accent); animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: 1; } to { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .dot.polling { animation: none; } }
 
 .activity-log {
   overflow: auto;
