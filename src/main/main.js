@@ -88,7 +88,11 @@ const handlers = {
     const errors = validateServer(server);
     const clash = store.get().servers.find((s) => s.id !== server.id && toSlug(s.name) === toSlug(server.name));
     if (clash) errors.push(`Another server is already called "${clash.name}".`);
+    else if (purges.blocksName(toSlug(server.name), server.id)) {
+      errors.push(`A removed server called "${server.name}" is still being cleaned up — try again in about two minutes.`);
+    }
     if (errors.length > 0) return { ok: false, errors };
+    purges.forgetName(toSlug(server.name), server.id);
     const saved = store.upsertServer(server);
     poller.rescan(saved.id);
     if (poller.running) poller.tick();

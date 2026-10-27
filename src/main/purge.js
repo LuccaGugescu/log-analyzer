@@ -83,6 +83,25 @@ class PurgeQueue extends EventEmitter {
     this.save();
   }
 
+  // Deletes and the folder removal match a server by name, not id, so a new
+  // server can't take a removed one's name until both deletes went out and its
+  // folder is gone: the follow-up delete would remove the new server's first
+  // lines, and the folder retry would remove its spool.
+  blocksName(slug, exceptId) {
+    return Object.entries(this.jobs).some(
+      ([serverId, job]) => serverId !== exceptId && job.slug === slug && !job.done && (job.sent.length < 2 || job.folderLeft),
+    );
+  }
+
+  // Once the name is reused, a leftover job would count the new server's lines
+  // as still to remove and never finish.
+  forgetName(slug, exceptId) {
+    for (const [serverId, job] of Object.entries(this.jobs)) {
+      if (serverId !== exceptId && job.slug === slug) delete this.jobs[serverId];
+    }
+    this.save();
+  }
+
   async runAll() {
     if (this.running) return;
     this.running = true;
