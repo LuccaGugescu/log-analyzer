@@ -86,3 +86,31 @@ ${M}2026 INFO ok
     server: 'web-01', dir: '/opt/svc/logs', file: '/opt/svc/logs/a.log', level: 'warn', service_name: 'web-01',
   });
 });
+
+test('shipper keeps each push under the 4 MB Loki gRPC limit', async (t) => {
+  const sizes = [];
+  const server = http.createServer((req, res) => {
+    let bytes = 0;
+    req.on('data', (chunk) => (bytes += chunk.length));
+    req.on('end', () => {
+      sizes.push(bytes);
+      res.writeHead(204).end();
+    });
+  });
+  await new Promise((resolve) => server.listen(3100, '127.0.0.1', resolve)).catch(() => t.skip('port 3100 busy'));
+  t.after(() => server.close());
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'la-ship-'));
+  const dir = path.join(root, 'web-01');
+  fs.mkdirSync(dir);
+  // Quote-heavy JSON lines grow the most when escaped into the push body.
+  const line = `${M}{"level":"info","msg":"${'"q" '.repeat(500)}"}\n`;
+  fs.writeFileSync(path.join(dir, 'big.log'), line.repeat(Math.ceil((6 * 1024 * 1024) / line.length)));
+  fs.utimesSync(path.join(dir, 'big.log'), new Date(0), new Date(0));
+
+  const shipper = new Shipper({ logsDir: root, stateFile: path.join(root, 'shipped.json') });
+  for (let round = 0; round < 10; round += 1) await shipper.shipAll();
+  assert.equal(shipper.lastError, null);
+  assert.ok(sizes.length > 1);
+  assert.ok(Math.max(...sizes) < 4 * 1024 * 1024, `largest push ${Math.max(...sizes)} bytes`);
+});

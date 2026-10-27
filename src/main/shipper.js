@@ -11,7 +11,10 @@ const SHIP_EVERY_MS = 5_000;
 // stack trace) in the next poll; it is held back until the file has been
 // quiet this long. Longer than the default 60s poll.
 const HOLD_LAST_ENTRY_MS = 90_000;
-const MAX_READ_BYTES = 4 * 1024 * 1024;
+// One read becomes one push. Loki's distributor forwards it to the ingester
+// over gRPC, which rejects messages over 4 MB; JSON escaping and labels grow a
+// read by ~25%, so a 4 MB read failed forever (and was retried forever).
+const MAX_READ_BYTES = 1024 * 1024;
 const MAX_ENTRY_LINES = 1000;
 const MAX_ENTRY_BYTES = 200 * 1024; // Loki rejects lines over 256 KB by default
 const INDEX_FILE = '.files.json';
@@ -87,11 +90,17 @@ class Shipper {
     this.busy = true;
     try {
       const servers = await fs.readdir(this.logsDir, { withFileTypes: true }).catch(() => []);
-      for (const server of servers.filter((d) => d.isDirectory())) await this.shipServer(server.name);
-      this.lastError = null;
-    } catch (error) {
-      // Loki not up yet / stopped: try again on the next round.
-      this.lastError = error.message;
+      let lastError = null;
+      // A push one server's logs keep failing must not hold back the others.
+      for (const server of servers.filter((d) => d.isDirectory())) {
+        try {
+          await this.shipServer(server.name);
+        } catch (error) {
+          // Loki not up yet / stopped: try again on the next round.
+          lastError = `${server.name}: ${error.message}`;
+        }
+      }
+      this.lastError = lastError;
     } finally {
       this.busy = false;
     }
